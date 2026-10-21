@@ -1,0 +1,69 @@
+{
+  "version": 1,
+  "updated": "2026-10-21",
+  "items": [
+    {
+      "id": "request-capability-escalation",
+      "title": "Add a request_capability escalation tool",
+      "status": "planned",
+      "priority": "high",
+      "area": "profiles",
+      "deferred_on": "2026-10-21",
+      "deferred_reason": "Skipped deliberately to keep the profile mechanism simple for the first pass; the least-privilege property does not depend on it.",
+      "why": "Capability profiles are fixed per run. If inference picks read_only for a task that needs an edit, the agent hits `unknown tool: propose_edit` and loops. Today the only recovery is a human re-running with --profile edit. This tool closes that gap without silently widening permissions.",
+      "trigger": "Implement when EITHER an eval case fails with `unknown tool` caused by the inferred profile, OR a real task needs a mid-run capability that was not requested up front.",
+      "design": [
+        "Tool `request_capability(profile, reason)` is itself registered at risk=write with gate=true, so asking for power is auditable and human-approved.",
+        "Handler does not mutate the registry. It records a `capability_requested` event and returns {status: pending_approval} for the gated path to resolve.",
+        "On approval the graph rebuilds the tool list for the NEXT model turn and emits `capability_granted`. Tools are never removed mid-run.",
+        "Escalation is monotonic: read_only -> edit -> exec. Downgrades are a new run, not a mutation of this one.",
+        "The grant is logged with actor, profile, and reason, so the trace answers 'why did this run have write access?'."
+      ],
+      "touchpoints": [
+        "src/glassbox/profiles.py",
+        "src/glassbox/tools/capability_tool.py",
+        "src/glassbox/sdk_agent.py",
+        "src/glassbox/policy.py"
+      ],
+      "acceptance": [
+        "A read_only run asked to fix code can request edit and, once approved, calls propose_edit in the next turn.",
+        "The JSONL trace contains capability_requested then capability_granted with an actor.",
+        "A denied request leaves the tool list unchanged and the run continues without crashing."
+      ]
+    },
+    {
+      "id": "dynamic-tool-selection",
+      "title": "Per-turn dynamic tool selection (evaluated, likely reject)",
+      "status": "rejected",
+      "priority": "low",
+      "area": "profiles",
+      "deferred_on": "2026-10-21",
+      "why": "Considered to reduce schema size per turn. Rejected on measurement: 11 schemas cost ~1060 tokens but ~88% is prompt-cached, while per-turn changes invalidate that prefix. Tool count did not predict latency (11 tools 1.7s vs 5 tools 2.4s), and a 5x-per-condition trial found no behavioural difference (5/5 vs 5/5 identical).",
+      "trigger": "Revisit only if a run's tool block grows past roughly 40 tools or the provider stops prefix-caching.",
+      "design": [
+        "Would require a retrievable index over tool descriptions plus a cache-aware batching strategy.",
+        "Would have to pin the tool set for at least a few turns to keep the cache warm.",
+        "Superseded by fixed capability profiles."
+      ],
+      "touchpoints": ["src/glassbox/profiles.py"],
+      "acceptance": []
+    },
+    {
+      "id": "stuck-loop-investigation",
+      "title": "Investigate why the agent re-reads instead of acting",
+      "status": "planned",
+      "priority": "medium",
+      "area": "agent-loop",
+      "deferred_on": "2026-10-21",
+      "why": "scripts/tool_scope_experiment.py showed 10/10 runs re-reading the same file on the second turn rather than proposing an edit or finishing. Reproducible, cause unknown. Suspected: the synthetic observation injected in that experiment does not match the real read_range result shape.",
+      "trigger": "Before relying on any eval that measures multi-step task completion.",
+      "design": [
+        "Repeat the experiment with a real tool observation captured from a live run instead of a hand-written blob.",
+        "Add a variant that includes a finish-only pressure prompt to see whether the loop is avoidance of acting or avoidance of finishing.",
+        "Compare across two models to separate prompt effects from model behaviour."
+      ],
+      "touchpoints": ["scripts/tool_scope_experiment.py", "src/glassbox/sdk_agent.py"],
+      "acceptance": ["A written cause, or a documented explanation of why the synthetic setup was the cause."]
+    }
+  ]
+}
