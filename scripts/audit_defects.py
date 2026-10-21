@@ -260,6 +260,44 @@ def check_agent_invariants(report: Report) -> None:
         )
 
 
+def check_one_finish_event_per_run(report: Report) -> None:
+    """A run must emit at most one `finish` event, and it must carry `verified`.
+
+    A run emitted two: one from tool dispatch without `verified`, then one from the
+    loop with it. Two records for one decision make "did the agent prove it?" a
+    question with several answers, which is worse than one wrong answer.
+    """
+    if not TRACE.exists():
+        report.ok("one-finish-per-run: no trace to check")
+        return
+
+    import collections
+
+    finishes: dict[str, list[dict]] = collections.defaultdict(list)
+    for line in TRACE.read_text().splitlines():
+        if not line.strip():
+            continue
+        record = json.loads(line)
+        if record["event"] == "finish" and not _is_pre_fix(record["run_id"]):
+            finishes[record["run_id"]].append(record)
+
+    problems = []
+    for run_id, records in finishes.items():
+        if len(records) > 1:
+            problems.append(f"{run_id} has {len(records)} finish events")
+        elif "verified" not in records[0]:
+            problems.append(f"{run_id} finish lacks 'verified'")
+
+    if problems:
+        report.add(
+            "MAJOR", "one-finish-per-run",
+            "; ".join(problems[:3]),
+            "emit the finish event once, from the loop, with the verified flag",
+        )
+    else:
+        report.ok("one-finish-per-run")
+
+
 def check_evidence_not_abandoned(report: Report) -> None:
     """No tracked run artifact may be modified but unstaged.
 
@@ -329,6 +367,7 @@ def check_all() -> Report:
         check_agent_invariants,
         check_evidence_not_abandoned,
         check_env_matches_template,
+        check_one_finish_event_per_run,
     ):
         check(report)
     return report

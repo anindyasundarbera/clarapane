@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import sys
 from pathlib import Path
+from typing import Any
 
 from . import identity, profiles
 from .backlog import BacklogError, load as load_backlog, reminder as backlog_reminder
@@ -21,8 +22,11 @@ from .profiles import ProfileName
 from .provider import Provider
 from .registry import ToolRegistry
 from .sdk_agent import Agent
+from .gate import InteractiveGate, PolicyGate
+from .proposals import ProposalStore
 from .tools.finish_tool import register_finish_tool
 from .tools.read_tools import register_read_tools
+from .tools.write_tools import register_write_tools
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 DEFAULT_WORKSPACE = PROJECT_ROOT / "sandbox"
@@ -39,6 +43,7 @@ def build_agent(
     verbose: bool = True,
     log_path: Path | None = None,
     app_name: str | None = None,
+    gate: Any = None,
 ) -> tuple[Agent, EventLog]:
     provider = Provider(env_path=str(PROJECT_ROOT / ".env"))
     workspace = Workspace(root=workspace_root)
@@ -47,6 +52,7 @@ def build_agent(
     # is allowed to see. Registration is a superset; the profile is the policy.
     registry = ToolRegistry()
     register_read_tools(registry, workspace)
+    register_write_tools(registry, workspace, ProposalStore(), step_getter=lambda: 0)
     register_finish_tool(registry)
 
     chosen: ProfileName = profile or profiles.infer(task)
@@ -58,6 +64,7 @@ def build_agent(
         provider, scoped, workspace, log,
         model=model, max_steps=max_steps, verbose=verbose,
         app_name=identity.app_name(app_name),
+        gate=gate if gate is not None else PolicyGate(allow_writes=False),
         # The profile the run was launched under, recorded on run_start so the
         # trace answers "what was this run allowed to do?" in one record.
         run_start_fields={
