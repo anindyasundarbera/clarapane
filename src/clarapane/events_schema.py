@@ -72,6 +72,23 @@ class Finish(TypedDict, total=False):
     original_content: str | None
 
 
+class Approval(TypedDict, total=False):
+    """A gate decision on a mutating tool call.
+
+    `operator` names the accountable human (or the policy identity); `fingerprint`
+    binds the decision to the exact payload, so the trace proves *what* was approved
+    and *by whom*, not merely that something was.
+    """
+
+    step: Required[int]
+    tool: Required[str]
+    approved: Required[bool]
+    actor: Required[str]
+    reason: Required[str]
+    operator: str
+    fingerprint: str
+
+
 class InjectionBlocked(TypedDict, total=False):
     step: Required[int]
     tool: Required[str]
@@ -122,6 +139,7 @@ SCHEMAS: dict[str, type] = {
     "provider_error": ProviderError,
     "recovery_failed": RecoveryFailed,
     "injection_blocked": InjectionBlocked,
+    "approval": Approval,
     "profile_selected": ProfileSelected,
 }
 

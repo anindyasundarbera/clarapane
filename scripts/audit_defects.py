@@ -34,21 +34,33 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 
-# Runs started before this instant predate the terminal-event fix (commit ece5b5d,
-# 2026-10-21T23:43+05:30). Violations are reported as historical rather than as
-# live defects, because rewriting the trace to hide the gap would defeat the point.
-TERMINAL_EVENT_FIX_CUTOFF = "2026-10-21T23:43:24+05:30"
+# Each check that can be invalidated by old data names the instant its fix landed.
+# Runs started at or before that instant are reported as historical, not as live
+# defects: rewriting old trace records to satisfy a new rule would erase the very
+# evidence of the bug the rule exists for.
+FIX_CUTOFFS: dict[str, str] = {
+    # run_end emitted on every exit path (commit ece5b5d)
+    "trace-terminal": "2026-10-21T23:43:24+05:30",
+    # one `finish` event per run, always carrying `verified`
+    "one-finish-per-run": "2026-10-22T00:45:00+05:30",
+    # approvals must name an operator and bind to a payload fingerprint
+    "approval-binding": "2026-10-22T01:00:00+05:30",
+    # every commit on main must arrive through a reviewed pull request
+    "no-direct-main-commits": "2026-10-22T00:40:00+05:30",
+}
 
 
-def _is_pre_fix(run_id: str) -> bool:
-    """run_id format: YYYYMMDDTHHMMSSZ-xxxxxx (UTC). Compare on the UTC instant."""
+def _predates(run_id: str, check: str) -> bool:
+    """True when this run started before the fix named by `check`."""
+    cutoff_text = FIX_CUTOFFS.get(check)
+    if cutoff_text is None:
+        return False
     try:
-        stamp = run_id.split("-", 1)[0]  # 20261021T170125Z
         from datetime import datetime
-        started = datetime.strptime(stamp, "%Y%m%dT%H%M%SZ")
-        cutoff = datetime.fromisoformat(TERMINAL_EVENT_FIX_CUTOFF)
-        cutoff_utc = cutoff.replace(tzinfo=None) - cutoff.utcoffset()
-        return started <= cutoff_utc
+
+        started = datetime.strptime(run_id.split("-", 1)[0], "%Y%m%dT%H%M%SZ")
+        cutoff = datetime.fromisoformat(cutoff_text)
+        return started <= (cutoff.replace(tzinfo=None) - cutoff.utcoffset())
     except (ValueError, AttributeError):
         return False
 
@@ -111,8 +123,8 @@ def check_trace_terminal_events(report: Report) -> None:
         for rid, counts in per_run.items()
         if counts["run_start"] != counts["run_end"]
     ]
-    live = [b for b in bad if not _is_pre_fix(b[0])]
-    legacy = [b for b in bad if _is_pre_fix(b[0])]
+    live = [b for b in bad if not _predates(b[0], "trace-terminal")]
+    legacy = [b for b in bad if _predates(b[0], "trace-terminal")]
     if live:
         report.add(
             "MAJOR", "trace-terminal",
@@ -135,18 +147,33 @@ def check_no_unverified_success(report: Report) -> None:
         report.ok("no-unverified-success: no trace to check")
         return
 
-    offenders = []
+    # A verified=False event is CORRECT when the run also reports failure. The
+    # defect is a run whose terminal reason claims success while its own finish
+    # event says the claim was unproven.
+    SUCCESS_REASONS = {"finish", "finish_recovered"}
+    finishes: dict[str, dict] = {}
+    endings: dict[str, str] = {}
     for line in TRACE.read_text().splitlines():
         if not line.strip():
             continue
         record = json.loads(line)
-        if record["event"] == "finish" and record.get("verified") is False:
-            offenders.append(record["run_id"])
+        if record["event"] == "finish":
+            finishes[record["run_id"]] = record
+        elif record["event"] == "run_end":
+            endings[record["run_id"]] = record.get("reason", "")
+
+    offenders = [
+        run_id for run_id, record in finishes.items()
+        if record.get("verified") is False
+        and endings.get(run_id) in SUCCESS_REASONS
+        and not _predates(run_id, "no-unverified-success")
+    ]
 
     if offenders:
         report.add(
             "BLOCKER", "no-unverified-success",
-            f"{len(set(offenders))} run(s) recorded finish.verified=False: {sorted(set(offenders))}",
+            f"{len(set(offenders))} run(s) claim success while finish.verified=False: "
+            f"{sorted(set(offenders))}",
             "a run must not be reported as finished when its claim is unproven",
         )
     else:
@@ -260,6 +287,148 @@ def check_agent_invariants(report: Report) -> None:
         )
 
 
+def check_one_finish_event_per_run(report: Report) -> None:
+    """A run must emit at most one `finish` event, and it must carry `verified`.
+
+    A run emitted two: one from tool dispatch without `verified`, then one from the
+    loop with it. Two records for one decision make "did the agent prove it?" a
+    question with several answers, which is worse than one wrong answer.
+    """
+    if not TRACE.exists():
+        report.ok("one-finish-per-run: no trace to check")
+        return
+
+    import collections
+
+    finishes: dict[str, list[dict]] = collections.defaultdict(list)
+    for line in TRACE.read_text().splitlines():
+        if not line.strip():
+            continue
+        record = json.loads(line)
+        if record["event"] == "finish" and not _predates(record["run_id"], "one-finish-per-run"):
+            finishes[record["run_id"]].append(record)
+
+    problems = []
+    for run_id, records in finishes.items():
+        if len(records) > 1:
+            problems.append(f"{run_id} has {len(records)} finish events")
+        elif "verified" not in records[0]:
+            problems.append(f"{run_id} finish lacks 'verified'")
+
+    if problems:
+        report.add(
+            "MAJOR", "one-finish-per-run",
+            "; ".join(problems[:3]),
+            "emit the finish event once, from the loop, with the verified flag",
+        )
+    else:
+        report.ok("one-finish-per-run")
+
+
+def check_no_direct_main_commits(report: Report) -> None:
+    """Commits that landed on main without going through a pull request.
+
+    A local hook prevents this and a GitHub ruleset blocks it, but both can be
+    bypassed (--no-verify, another clone, an admin override). This is the detective
+    control: it reports what actually happened rather than what was supposed to.
+
+    A commit counts as reviewed when its message carries a PR reference in the Refs:
+    footer, which `gh pr merge --squash` produces.
+    """
+    import re
+    import subprocess
+
+    def git(*args: str) -> str:
+        return subprocess.run(["git", *args], cwd=PROJECT_ROOT,
+                              capture_output=True, text=True).stdout
+
+    # Only commits reachable from main count; a feature branch may hold whatever.
+    main_ref = "origin/main"
+    if subprocess.run(["git", "rev-parse", "--verify", main_ref], cwd=PROJECT_ROOT,
+                      capture_output=True).returncode != 0:
+        main_ref = "main"
+    if subprocess.run(["git", "rev-parse", "--verify", main_ref], cwd=PROJECT_ROOT,
+                      capture_output=True).returncode != 0:
+        report.ok("no-direct-main-commits: no main branch")
+        return
+
+    raw = git("log", "--format=%H%x00%s%x00%b%x00", main_ref)
+    parts = [x for x in raw.split("\x00")]
+    # Bootstrap commits created before the policy are exempt by design.
+    BOOTSTRAP = set()
+    for line in git("log", "--format=%h %s", main_ref).splitlines():
+        if line.split(" ", 1)[-1].startswith("chore: establish repo guardrails"):
+            BOOTSTRAP.add(line.split(" ", 1)[0])
+
+    # Commits made before the policy existed are history, not violations. Their
+    # timestamps, not their subjects, decide this, so a bootstrap-shaped subject
+    # cannot be used to sneak a later commit past the check.
+    cutoff_text = FIX_CUTOFFS["no-direct-main-commits"]
+    from datetime import datetime
+
+    cutoff = datetime.fromisoformat(cutoff_text)
+
+    unreviewed: list[str] = []
+    for i in range(0, len(parts) - 2, 3):
+        sha, subject, body = parts[i].strip(), parts[i + 1], parts[i + 2]
+        if not sha:
+            continue
+        committed = git("show", "-s", "--format=%cI", sha).strip()
+        try:
+            when = datetime.fromisoformat(committed)
+        except ValueError:
+            when = cutoff
+        if when <= cutoff:
+            continue
+        if re.search(r"^Refs:.*(#|pull/)\d+", body, re.MULTILINE):
+            continue
+        unreviewed.append(f"{sha[:7]} {subject[:48]}")
+
+    if unreviewed:
+        report.add(
+            "MAJOR", "no-direct-main-commits",
+            f"{len(unreviewed)} commit(s) on {main_ref} carry no PR reference: "
+            + "; ".join(unreviewed[:3]),
+            "land changes via a pull request; the squash commit records the PR number",
+        )
+    else:
+        report.ok("no-direct-main-commits")
+
+
+def check_approval_binding(report: Report) -> None:
+    """Every approval must name an accountable operator and bind to a payload.
+
+    Two defects this closes: an approval recorded only `actor="human"`, which is a
+    category rather than a person; and an approval with no fingerprint, so the trace
+    could not prove which action the operator actually authorized.
+    """
+    if not TRACE.exists():
+        report.ok("approval-binding: no trace to check")
+        return
+
+    problems: list[str] = []
+    for line in TRACE.read_text().splitlines():
+        if not line.strip():
+            continue
+        record = json.loads(line)
+        if record["event"] != "approval":
+            continue
+        if _predates(record["run_id"], "approval-binding"):
+            continue
+        missing = [f for f in ("operator", "fingerprint") if not record.get(f)]
+        if missing:
+            problems.append(f"{record['run_id']} approval missing {missing}")
+
+    if problems:
+        report.add(
+            "MAJOR", "approval-binding",
+            "; ".join(problems[:3]),
+            "record who approved and a fingerprint of the exact payload",
+        )
+    else:
+        report.ok("approval-binding")
+
+
 def check_evidence_not_abandoned(report: Report) -> None:
     """No tracked run artifact may be modified but unstaged.
 
@@ -329,6 +498,9 @@ def check_all() -> Report:
         check_agent_invariants,
         check_evidence_not_abandoned,
         check_env_matches_template,
+        check_one_finish_event_per_run,
+        check_approval_binding,
+        check_no_direct_main_commits,
     ):
         check(report)
     return report

@@ -1,28 +1,47 @@
 #!/bin/sh
-# Refuse to commit while a tracked artifact is modified but unstaged.
+# Refuse to commit directly to a protected branch.
 #
-# Why this exists (twice-confirmed failure):
-#   1. CLARAPANE_APP_NAME was added to .env.example and code but not to .env.
-#   2. A commit staged four source files and abandoned runs/runs.jsonl, so the
-#      commit's own "Evidence:" section cited a trace that was not in the commit.
+# Why: this project requires that every change reaches main through a reviewed PR.
+# A commit made straight onto main bypasses review, and on 2026-10-21 twenty-eight
+# of them did exactly that. A local hook is preventive, not authoritative -- it can be
+# bypassed with --no-verify -- so the authoritative control is the GitHub ruleset and
+# the detective control is scripts/audit_defects.py.
 #
-# Both came from selective `git add <files>`: the author lists the files they were
-# thinking about and omits the peer artifact. This hook makes that omission visible
-# at commit time instead of at review time.
-#
-# Artifacts under runs/ are enforced (they are the product). Other unstaged tracked
-# files produce a warning only, because partial staging is sometimes deliberate.
-#
-# Override deliberately:  ALLOW_UNSTAGED=1 git commit ...
-# Prefer:                make commit MSG="..."
+# Protected branches come from PROTECTED_BRANCHES (space-separated), default "main".
+# Escape hatch for a deliberate hotfix, recorded in the trace by the audit:
+#   ALLOW_PROTECTED_COMMIT=1 git commit ...
 
+protected="${PROTECTED_BRANCHES:-main}"
+current=$(git symbolic-ref --short HEAD 2>/dev/null || echo "")
+
+for branch in $protected; do
+  if [ "$current" = "$branch" ]; then
+    if [ "${ALLOW_PROTECTED_COMMIT:-0}" = "1" ]; then
+      cat >&2 <<EOF
+pre-commit: ALLOW_PROTECTED_COMMIT=1 -- committing to '$current' anyway.
+This bypass is visible to scripts/audit_defects.py, which will report it.
+EOF
+      break
+    fi
+    cat >&2 <<EOF
+pre-commit: refusing to commit directly to '$current'
+
+Every change must reach '$current' through a pull request, so that the diff is
+reviewed and the history keeps a link to the discussion. Direct commits are how
+28 unreviewed changes landed on main.
+
+Fix:
+  git switch -c feat/<short-description>     # recommended
+  ALLOW_PROTECTED_COMMIT=1 git commit ...     # deliberate hotfix, will be audited
+EOF
+    exit 1
+  fi
+done
+
+# ---- refuse to commit while a tracked run artifact is modified but unstaged ----
+# Twice-confirmed failure: a commit staged source changes and left runs/runs.jsonl
+# behind, so its own "Evidence:" section cited a trace that was not in the commit.
 unstaged=$(git diff --name-only --)
-staged=$(git diff --cached --name-only --)
-
-if [ -z "$unstaged" ]; then
-  exit 0
-fi
-
 abandoned=$(printf '%s\n' "$unstaged" | grep -E '^runs/' || true)
 
 if [ -n "$abandoned" ]; then
@@ -42,15 +61,13 @@ unverifiable.
 
 Fix:
   git add runs/            # include the evidence
-  # or, if the trace genuinely does not belong in this commit:
-  ALLOW_UNSTAGED=1 git commit ...
-
-Next time use:  make commit MSG="<subject>"
+  ALLOW_UNSTAGED=1 git commit ...   # only when the trace truly does not belong
 EOF
   exit 1
 fi
 
-echo "pre-commit: note -- tracked files modified but not staged:" >&2
-printf '  %s\n' "$unstaged" >&2
-echo "pre-commit: committing anyway (only runs/ is enforced)" >&2
+if [ -n "$unstaged" ]; then
+  echo "pre-commit: note -- tracked files modified but not staged:" >&2
+  printf '  %s\n' "$unstaged" >&2
+fi
 exit 0

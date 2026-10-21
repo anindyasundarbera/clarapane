@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from . import gate as gate_mod
 from . import identity, safety
 from .events import EventLog
 from .policy import PolicyError, Workspace
@@ -81,6 +82,7 @@ class Agent:
         verbose: bool = True,
         run_start_fields: dict[str, Any] | None = None,
         app_name: str | None = None,
+        gate: Any = None,
     ) -> None:
         self.provider = provider
         self.registry = registry
@@ -93,6 +95,8 @@ class Agent:
         self.run_start_fields = run_start_fields or {}
         # Resolved once at construction so one run cannot change identity mid-flight.
         self.app_name = identity.app_name(app_name)
+        # None means "no gate configured": a gated tool then fails closed.
+        self.gate = gate
 
     # ------------------------------------------------------------------ public
     def run(self, task: str) -> AgentResult:
@@ -157,15 +161,21 @@ class Agent:
 
             if terminating:
                 last = steps[-1]
-                self.log.emit("run_end", reason="finish", steps=len(steps))
+                verified = self._is_verified(steps)
+                reason = "finish" if verified else "finish_unverified"
+                self.log.emit("finish", step=last.index,
+                              summary=(last.tool_args or {}).get("summary"),
+                              evidence=(last.tool_args or {}).get("evidence"),
+                              recovered=False, verified=verified)
+                self.log.emit("run_end", reason=reason, steps=len(steps))
                 self._print_done(last)
                 return AgentResult(
-                    finished=True,
+                    finished=verified,
                     summary=(last.tool_args or {}).get("summary"),
                     evidence=(last.tool_args or {}).get("evidence"),
                     steps=steps,
                     messages=messages,
-                    reason="finish",
+                    reason=reason,
                 )
 
         self.log.emit("run_end", reason="step_cap", steps=len(steps))
@@ -262,16 +272,46 @@ class Agent:
             return self._fail(call, index, name, parse_error, started, messages)
 
         if name == "finish":
+            # The loop emits the `finish` event, not this method: `verified` depends
+            # on the whole step list, which only the loop can see. Logging here would
+            # produce two `finish` records per run, the first missing `verified`.
             step = Step(index=index, tool_name=name, tool_args=args, tool_ok=True,
                         duration_ms=int((time.perf_counter() - started) * 1000))
-            self.log.emit("finish", step=index, summary=args.get("summary"),
-                          evidence=args.get("evidence"))
             return step, args
 
         try:
             spec = self.registry.get(name)
         except ToolError as exc:
             return self._fail(call, index, name, str(exc), started, messages)
+
+        # The gate lives in the harness, between lookup and execution. A tool
+        # cannot decide whether it was approved.
+        if spec.gate:
+            if self.gate is None:
+                return self._fail(call, index, name,
+                                  "this tool requires approval but no gate is configured",
+                                  started, messages, spec=spec)
+            decision = self.gate.decide(name, args)
+            self.log.emit("approval", step=index, tool=name, **decision.as_dict())
+
+            if not decision.approved:
+                return self._fail(
+                    call, index, name,
+                    f"denied ({decision.actor}): {decision.reason}",
+                    started, messages, spec=spec,
+                )
+
+            # Enforce the binding: an approval authorizes one exact payload. If the
+            # gate approved a different fingerprint than what will now execute, the
+            # approval does not cover this action.
+            expected = gate_mod.fingerprint(name, args)
+            if decision.fingerprint != expected:
+                return self._fail(
+                    call, index, name,
+                    "approval fingerprint mismatch: the approved action does not match "
+                    "the action being executed",
+                    started, messages, spec=spec,
+                )
 
         try:
             result = spec.handler(**args)
@@ -331,6 +371,26 @@ class Agent:
         return Step(index=index, tool_name=name, tool_args=None, tool_ok=False,
                     error=message, duration_ms=duration), None
 
+    def _is_verified(self, steps: list[Step]) -> bool:
+        """Is a `finish` claim backed by evidence?
+
+        Valid when the run could not mutate anything (read-only profile), or when a
+        mutating tool was actually called and succeeded. Mutation offered but never
+        used means the claim is unproven -- regardless of how confident the summary
+        is. This rule must hold on EVERY exit path; it was previously applied only
+        to recovered finishes, which let a denied write report success.
+        """
+        offered_mutation = any(
+            self.registry.get(name).risk in ("write", "exec")
+            for name in self.registry.names()
+        )
+        used_mutation = any(
+            step.tool_name and step.tool_ok and step.tool_name != "finish"
+            and self._risk_of(step.tool_name) in ("write", "exec")
+            for step in steps
+        )
+        return (not offered_mutation) or used_mutation
+
     def _recover_finish(
         self,
         messages: list[dict[str, Any]],
@@ -361,15 +421,7 @@ class Agent:
         if "finish" not in self.registry:
             return None
 
-        # A mutating capability that was offered but never used means the work may
-        # not have been done; never upgrade that to a success.
-        offered_mutation = any(
-            self.registry.get(name).risk in ("write", "exec") for name in self.registry.names()
-        )
-        used_mutation = any(s.tool_name and s.tool_ok and s.tool_name != "finish"
-                            and self._risk_of(s.tool_name) in ("write", "exec")
-                            for s in steps)
-        verified = not offered_mutation or used_mutation
+        verified = self._is_verified(steps)
 
         probe = list(messages)
         probe.append({"role": "user", "content": (

@@ -252,8 +252,11 @@ def test_recovery_accepts_success_when_mutation_was_actually_used(workspace, tmp
                                  "call_fin")]},
     ])
     log = EventLog(tmp_path / "e.jsonl")
-    agent = Agent(provider, registry, workspace, log, max_steps=4, verbose=False)
+    # A gated tool needs a gate; without one the loop fails closed by design.
+    from clarapane.gate import PolicyGate
 
+    agent = Agent(provider, registry, workspace, log, max_steps=4, verbose=False,
+                  gate=PolicyGate(allow_writes=True, reason="test"))
     result = agent.run("fix the bug")
     log.close()
 
