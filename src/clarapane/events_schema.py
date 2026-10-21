@@ -72,6 +72,14 @@ class Finish(TypedDict, total=False):
     original_content: str | None
 
 
+class InjectionBlocked(TypedDict, total=False):
+    step: Required[int]
+    tool: Required[str]
+    source: Required[str]
+    finding: Required[str]
+    excerpt: str
+
+
 class RecoveryFailed(TypedDict, total=False):
     step: Required[int]
     error: Required[str]
@@ -113,6 +121,7 @@ SCHEMAS: dict[str, type] = {
     "run_end": RunEnd,
     "provider_error": ProviderError,
     "recovery_failed": RecoveryFailed,
+    "injection_blocked": InjectionBlocked,
     "profile_selected": ProfileSelected,
 }
 
