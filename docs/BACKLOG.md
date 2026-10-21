@@ -52,3 +52,28 @@ Hook points are marked in [profiles.py](../src/glassbox/profiles.py) (`select()`
 ### `dynamic-tool-selection` (rejected)
 
 Kept deliberately: it documents a *measured* rejection. Per-turn tool rotation discards the prompt-cache prefix (~88% of the tool block was cached), tool count did not predict latency (11 tools 1.7s vs 5 tools 2.4s), and a 5×-per-condition trial found no behavioural difference (5/5 vs 5/5). Revisit only past ~40 tools or if prefix caching goes away.
+
+## Trace storage: decisions taken 2026-10-21
+
+Measured before deciding:
+
+| Scenario | Final file | `.git` after gc |
+|---|---|---|
+| Append-only log, 20 commits (41 MB of versions) | 3.9 MB | **0.10 MB** |
+| Rewriting the file, 20 commits | 3.1 MB | **15 MB** |
+
+Git delta-compresses prefix changes almost free, so committing an append-only
+trace is cheap; *rewriting* is what costs. `jq -s` full-scans 6,000 events in
+~97 ms, so read cost is also not a problem at current scale.
+
+Decisions:
+
+1. **JSONL remains the only write path** and the source of truth. Append + flush
+   cannot fail the way a database write can.
+2. **SQLite ingest is deferred to Phase 6**, when evals need per-run assertions.
+   It will be a separate command, writing `runs/trace.db` keyed on
+   `PRIMARY KEY (run_id, seq)` so re-ingest is idempotent.
+3. **`trace.db` is gitignored** — it is derived and rebuildable.
+4. **Event schema is now explicit** (`events_schema.py`) with write-time
+   validation, because the SQL ingest would otherwise have to guess the shape,
+   and a renamed field would break queries silently.

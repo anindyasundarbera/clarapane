@@ -11,6 +11,10 @@ __pycache__/
 dist/
 build/
 
+# Derived trace index (rebuild with scripts/ingest_traces.py; never a source of truth)
+*.db
+trace.db
+
 # Tooling caches
 .pytest_cache/
 .mypy_cache/

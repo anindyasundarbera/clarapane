@@ -45,7 +45,9 @@
         "Would have to pin the tool set for at least a few turns to keep the cache warm.",
         "Superseded by fixed capability profiles."
       ],
-      "touchpoints": ["src/glassbox/profiles.py"],
+      "touchpoints": [
+        "src/glassbox/profiles.py"
+      ],
       "acceptance": []
     },
     {
@@ -62,8 +64,43 @@
         "Add a variant that includes a finish-only pressure prompt to see whether the loop is avoidance of acting or avoidance of finishing.",
         "Compare across two models to separate prompt effects from model behaviour."
       ],
-      "touchpoints": ["scripts/tool_scope_experiment.py", "src/glassbox/sdk_agent.py"],
-      "acceptance": ["A written cause, or a documented explanation of why the synthetic setup was the cause."]
+      "touchpoints": [
+        "scripts/tool_scope_experiment.py",
+        "src/glassbox/sdk_agent.py"
+      ],
+      "acceptance": [
+        "A written cause, or a documented explanation of why the synthetic setup was the cause."
+      ]
+    },
+    {
+      "id": "sqlite-trace-ingest",
+      "title": "Add SQLite ingest for trace queries",
+      "status": "planned",
+      "priority": "medium",
+      "area": "traces",
+      "deferred_on": "2026-10-21",
+      "why": "jq cannot express eval assertions (nested filters, arithmetic over token fields). Deferred until Phase 6 when evals need it.",
+      "trigger": "When eval assertions require per-run aggregation that jq makes unreadable",
+      "design": [],
+      "touchpoints": [],
+      "acceptance": [
+        "<define before starting>"
+      ]
+    },
+    {
+      "id": "stall-instead-of-finish",
+      "title": "Fix agent stalling instead of calling finish",
+      "status": "planned",
+      "priority": "high",
+      "area": "agent-loop",
+      "deferred_on": "2026-10-21",
+      "why": "3 of 6 runs ended with finish_reason=stop and no tool call, returning finished=False. The agent reads the file then simply stops talking.",
+      "trigger": "Phase 3: blocking any multi-step eval",
+      "design": [],
+      "touchpoints": [],
+      "acceptance": [
+        "<define before starting>"
+      ]
     }
   ]
 }
