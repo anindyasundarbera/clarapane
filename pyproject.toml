@@ -1,0 +1,12 @@
+[project]
+name = "glassbox"
+version = "0.1.0"
+description = "A glass-box coding agent: every action proposed, gated, and logged."
+requires-python = ">=3.11"
+dependencies = ["openai>=1.40", "python-dotenv>=1.0"]
+
+[tool.setuptools]
+packages = ["glassbox", "glassbox.tools"]
+
+[tool.setuptools.package-dir]
+glassbox = "src/glassbox"

@@ -1,0 +1,23 @@
+# Commit message template. Enable with:
+#   git config commit.template .gitmessage
+#
+# Format: <type>(<scope>): <subject>       (max 72 chars, lowercase, no period)
+# Types:  feat fix docs test refactor perf chore build ci
+#
+# The body is the traceability record. `git log --grep="Decision:"` should answer
+# "why does this commit exist?" without reading the diff.
+
+# --- What changed (bullets, imperative mood) ---
+
+
+# --- Why it was needed (the problem, not the solution) ---
+
+
+# --- Decision: alternatives considered and why rejected ---
+
+
+# --- Evidence: tests, measurements, files proving it works ---
+
+
+# --- Refs: backlog:<id>, phase:<n>, issue/PR links ---
+
