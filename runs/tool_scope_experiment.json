@@ -1,0 +1,58 @@
+{
+  "model": "deepseek-v4.1-flash:cloud",
+  "trials": 5,
+  "results": {
+    "read+finish": {
+      "re-read (loop)": 5
+    },
+    "read+edit+finish": {
+      "re-read (loop)": 5
+    }
+  },
+  "traces": {
+    "read+finish": [
+      [
+        "read_range",
+        "read_range"
+      ],
+      [
+        "read_range",
+        "read_range"
+      ],
+      [
+        "read_range",
+        "read_range"
+      ],
+      [
+        "read_range",
+        "read_range"
+      ],
+      [
+        "read_range",
+        "read_range"
+      ]
+    ],
+    "read+edit+finish": [
+      [
+        "read_range",
+        "read_range"
+      ],
+      [
+        "read_range",
+        "read_range"
+      ],
+      [
+        "read_range",
+        "read_range"
+      ],
+      [
+        "read_range",
+        "read_range"
+      ],
+      [
+        "read_range",
+        "read_range"
+      ]
+    ]
+  }
+}
