@@ -380,7 +380,12 @@ def check_no_direct_main_commits(report: Report) -> None:
             when = cutoff
         if when <= cutoff:
             continue
-        if re.search(r"^Refs:.*(#|pull/)\d+", body, re.MULTILINE):
+        # `gh pr merge --squash` appends " (#N)" to the SUBJECT, not the body. Accept
+        # both, because the PR reference is what proves a review happened, and where
+        # GitHub puts it is not something we control.
+        if re.search(r"\(#\d+\)\s*$", subject) or re.search(
+            r"^(Refs:.*)?(#|pull/)\d+", body, re.MULTILINE
+        ):
             continue
         unreviewed.append(f"{sha[:7]} {subject[:48]}")
 
