@@ -33,6 +33,20 @@ DEFAULT_WORKSPACE = PROJECT_ROOT / "sandbox"
 RUNS_DIR = PROJECT_ROOT / "runs"
 
 
+def current_plan_step() -> str | None:
+    """The active training step, so each run states what it is for."""
+    import json as _json
+
+    try:
+        data = _json.loads((PROJECT_ROOT / "plan.json").read_text())
+    except (OSError, ValueError):
+        return None
+    for step in data.get("steps", []):
+        if step.get("status") == "in_progress":
+            return step.get("title", step.get("id"))
+    return None
+
+
 def build_agent(
     *,
     workspace_root: Path,
@@ -117,6 +131,9 @@ def main(argv: list[str] | None = None) -> int:
 
     print(identity.banner(args.name))
     print(f"operator  : {identity.operator(args.operator)}")
+    step = current_plan_step()
+    if step:
+        print(f"plan step : {step}")
     print(f"task      : {args.task}")
     print(f"model     : {agent.model}")
     print(f"workspace : {agent.workspace.root}")

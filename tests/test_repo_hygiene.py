@@ -318,3 +318,58 @@ def test_approval_decisions_always_carry_operator_and_fingerprint():
         decision = gate.decide("apply_edit", args)
         assert decision.operator, "decision has no accountable operator"
         assert len(decision.fingerprint) == 12, "decision is not bound to a payload"
+
+
+# ------------------------------------------------------- scope lock (rule 0a)
+
+
+def test_plan_exists_and_declares_its_purpose():
+    """Deviation is only measurable against a written plan (AGENTS.md 0a)."""
+    import json
+
+    plan_file = PROJECT_ROOT / "plan.json"
+    assert plan_file.exists(), "plan.json is missing"
+
+    data = json.loads(plan_file.read_text())
+    assert data.get("purpose"), "plan.json must state why this project exists"
+    assert data.get("steps"), "plan.json must list the steps"
+    assert data.get("current_step"), "plan.json must name the current step"
+    assert data.get("not_in_plan"), "plan.json must list what is explicitly out of scope"
+
+
+def test_exactly_one_step_is_in_progress():
+    """Two active steps means two tracks, which is how a plan derails."""
+    import json
+
+    data = json.loads((PROJECT_ROOT / "plan.json").read_text())
+    active = [s["id"] for s in data["steps"] if s.get("status") == "in_progress"]
+    assert len(active) == 1, f"expected one in-progress step, found {active}"
+
+
+def test_plan_steps_are_sequential():
+    """A later step cannot start before an earlier one is done."""
+    import json
+
+    data = json.loads((PROJECT_ROOT / "plan.json").read_text())
+    seen_unfinished = None
+    for step in data["steps"]:
+        if step.get("status") in ("done", "in_progress"):
+            assert seen_unfinished is None, (
+                f"step {step['id']!r} advanced while {seen_unfinished!r} was unfinished"
+            )
+        if step.get("status") != "done":
+            seen_unfinished = seen_unfinished or step["id"]
+
+
+def test_agents_md_documents_the_scope_lock():
+    text = (PROJECT_ROOT / "AGENTS.md").read_text()
+    assert "Purpose and scope lock" in text
+    assert "Deviation is a defect" in text
+    assert "plan.json" in text
+
+
+def test_cli_surfaces_the_current_plan_step():
+    """Every run should state what it is for, so drift is visible immediately."""
+    cli = (PROJECT_ROOT / "src" / "clarapane" / "cli.py").read_text()
+    assert "current_plan_step" in cli
+    assert "plan step" in cli
