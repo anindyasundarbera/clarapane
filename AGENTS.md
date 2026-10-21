@@ -71,6 +71,36 @@ git status --short            # .env must never appear
 git diff --cached --name-only | grep -E '(^|/)\.env$' && echo "STOP: secret staged"
 ```
 
+## 1a. Atomic completion — a change-set has peer surfaces
+
+Twice in this project a change was **adopted on one surface and abandoned on
+another**. Both times the cause was selective `git add <files>`: the author lists
+the files they were thinking about and omits a peer artifact.
+
+| # | Changed | Forgotten | Consequence |
+|---|---|---|---|
+| 1 | `.env.example`, `identity.py`, `cli.py` | `.env` | The setting was documented, wired, and **inert** |
+| 2 | four source files | `runs/runs.jsonl` | The commit's own `Evidence:` cited a trace it did not contain |
+
+Rule: **a change-set is not complete until every peer surface has been considered
+and either updated or explicitly excluded.** Common peers:
+
+- a new setting → `.env.example` **and** `.env` **and** the code that reads it
+- agent behaviour → `src/` **and** the trace under `runs/` **and** the backlog entry
+- a new invariant → the code **and** a test **and** the audit check
+- a rename → package, imports, docs, `AGENTS.md`, `.github/`, installed config
+
+This is enforced, not advised:
+
+- `.githooks/pre-commit` refuses a commit while a tracked `runs/` artifact is
+  modified but unstaged.
+- `make commit MSG="..."` stages everything, so the default path cannot forget.
+- `scripts/audit_defects.py` reports `evidence-abandoned` and
+  `env-matches-template`, and runs in the test suite.
+- `tests/test_repo_hygiene.py` compares `.env` against `.env.example` by key name.
+
+Override deliberately and rarely: `ALLOW_UNSTAGED=1 git commit ...`
+
 ## 2. Commit messages
 
 Format: **Conventional Commits**, enforced by `.githooks/commit-msg`.

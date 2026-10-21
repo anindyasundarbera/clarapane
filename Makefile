@@ -4,7 +4,7 @@
 PY := .venv/bin/python
 export PYTHONPATH := src
 
-.PHONY: help test audit run models clean backlog
+.PHONY: help test audit run models clean backlog commit
 
 help:
 	@echo "make test       run the test suite (includes the defect audit)"
@@ -29,6 +29,14 @@ models:
 
 backlog:
 	$(PY) -m clarapane.backlog due
+
+# Commit with the trace included by default, so evidence is never left behind.
+commit:
+	@test -n "$(MSG)" || { echo 'usage: make commit MSG="feat(scope): subject"'; exit 2; }
+	git add -A
+	ALLOW_UNSTAGED=1 git commit -F - <<'MSG_EOF'
+	$(MSG)
+	MSG_EOF
 
 clean:
 	find . -name '__pycache__' -not -path './.venv/*' -type d -exec rm -rf {} + 2>/dev/null || true

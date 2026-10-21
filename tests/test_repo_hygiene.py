@@ -229,3 +229,39 @@ def test_identity_variable_is_documented_and_wired():
     cli = (PROJECT_ROOT / "src" / "clarapane" / "cli.py").read_text()
     assert '"--name"' in cli, "CLI must expose --name"
     assert "identity.app_name" in cli, "CLI must resolve the name through identity"
+
+
+def test_no_run_artifact_is_abandoned():
+    """A commit must not leave tracked evidence behind (rule 1a in AGENTS.md).
+
+    Twice-confirmed failure: source changes were committed while runs/runs.jsonl
+    stayed unstaged, so the commit's own Evidence: section cited a trace it did not
+    contain. The pre-commit hook blocks this, but hooks are not installed in CI, so
+    the test suite must enforce it too.
+    """
+    import subprocess
+
+    out = subprocess.run(
+        ["git", "diff", "--name-only"], cwd=PROJECT_ROOT, capture_output=True, text=True
+    ).stdout
+    abandoned = [f for f in out.splitlines() if f.strip().startswith("runs/")]
+    assert not abandoned, (
+        f"tracked run artifact(s) modified but unstaged: {abandoned}. "
+        "Use `make commit MSG=...` so evidence is included."
+    )
+
+
+def test_pre_commit_hook_is_installed_and_executable():
+    """The hook must exist, be executable, and be the configured hooks path."""
+    import os
+    import subprocess
+
+    hook = PROJECT_ROOT / ".githooks" / "pre-commit"
+    assert hook.exists(), "pre-commit hook missing"
+    assert os.access(hook, os.X_OK), "pre-commit hook is not executable"
+
+    configured = subprocess.run(
+        ["git", "config", "core.hooksPath"], cwd=PROJECT_ROOT,
+        capture_output=True, text=True,
+    ).stdout.strip()
+    assert configured == ".githooks", f"core.hooksPath is {configured!r}, not '.githooks'"

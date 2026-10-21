@@ -260,6 +260,63 @@ def check_agent_invariants(report: Report) -> None:
         )
 
 
+def check_evidence_not_abandoned(report: Report) -> None:
+    """No tracked run artifact may be modified but unstaged.
+
+    Twice-confirmed failure: a commit staged source changes and left runs/runs.jsonl
+    behind, so its own "Evidence:" section cited a trace that was not in the commit.
+    The pre-commit hook catches this at commit time; this check catches it whenever
+    the audit runs, including in CI where hooks are not installed.
+    """
+    import subprocess
+
+    def git(*args: str) -> list[str]:
+        out = subprocess.run(["git", *args], cwd=PROJECT_ROOT,
+                             capture_output=True, text=True).stdout
+        return [line for line in out.splitlines() if line.strip()]
+
+    abandoned = [f for f in git("diff", "--name-only") if f.startswith("runs/")]
+    if abandoned:
+        report.add(
+            "MAJOR", "evidence-abandoned",
+            f"tracked run artifact(s) modified but unstaged: {abandoned}",
+            "git add runs/ so the commit carries the evidence it cites",
+        )
+    else:
+        report.ok("evidence-abandoned")
+
+
+def check_env_matches_template(report: Report) -> None:
+    """Every key in .env.example must exist in .env (names only, never values)."""
+    example = PROJECT_ROOT / ".env.example"
+    env = PROJECT_ROOT / ".env"
+    if not env.exists():
+        report.ok("env-matches-template: no local .env")
+        return
+
+    def keys(text: str) -> set[str]:
+        found: set[str] = set()
+        for line in text.splitlines():
+            body = line.strip().lstrip("#").strip()
+            if "=" not in body:
+                continue
+            key, _, value = body.partition("=")
+            key = key.strip()
+            if key.isidentifier() and key.upper() == key and " " not in value.strip():
+                found.add(key)
+        return found
+
+    missing = sorted(keys(example.read_text()) - keys(env.read_text()))
+    if missing:
+        report.add(
+            "MAJOR", "env-matches-template",
+            f".env is missing keys declared in .env.example: {missing}",
+            "add them to .env or the feature is documented but inert",
+        )
+    else:
+        report.ok("env-matches-template")
+
+
 def check_all() -> Report:
     report = Report()
     for check in (
@@ -270,6 +327,8 @@ def check_all() -> Report:
         check_single_log_writer,
         check_backlog_integrity,
         check_agent_invariants,
+        check_evidence_not_abandoned,
+        check_env_matches_template,
     ):
         check(report)
     return report
