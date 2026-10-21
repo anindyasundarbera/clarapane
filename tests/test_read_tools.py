@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import pytest
 
-from glassbox.registry import ToolError, ToolRegistry
+from clarapane.registry import ToolError, ToolRegistry
 
 
 @pytest.fixture
 def tools(workspace):
-    from glassbox.tools.read_tools import register_read_tools
+    from clarapane.tools.read_tools import register_read_tools
 
     registry = ToolRegistry()
     register_read_tools(registry, workspace)

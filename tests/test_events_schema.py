@@ -6,8 +6,8 @@ import json
 
 import pytest
 
-from glassbox import events_schema as S
-from glassbox.events import EventLog
+from clarapane import events_schema as S
+from clarapane.events import EventLog
 
 
 def test_required_keys_are_actually_required():

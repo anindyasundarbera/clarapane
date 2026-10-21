@@ -18,12 +18,12 @@ Design rules
 
 CLI
 ---
-    python -m glassbox.backlog                 # everything, grouped by status
-    python -m glassbox.backlog due             # only what is actionable now
-    python -m glassbox.backlog show <id>
-    python -m glassbox.backlog start <id>      # planned -> in_progress
-    python -m glassbox.backlog done <id>
-    python -m glassbox.backlog add --title "..." --why "..." --area agent-loop
+    python -m clarapane.backlog                 # everything, grouped by status
+    python -m clarapane.backlog due             # only what is actionable now
+    python -m clarapane.backlog show <id>
+    python -m clarapane.backlog start <id>      # planned -> in_progress
+    python -m clarapane.backlog done <id>
+    python -m clarapane.backlog add --title "..." --why "..." --area agent-loop
 """
 
 from __future__ import annotations
@@ -109,10 +109,6 @@ def validate(data: dict[str, Any]) -> None:
 
 
 # ------------------------------------------------------------------- selection
-def by_status(data: dict[str, Any], status: Status) -> list[dict[str, Any]]:
-    return [i for i in data["items"] if i["status"] == status]
-
-
 def due(data: dict[str, Any]) -> list[dict[str, Any]]:
     """Items that are actionable now: open, and not deprioritised to 'low'."""
     return [i for i in data["items"] if i["status"] in OPEN_STATUSES and i.get("priority") != "low"]
@@ -135,7 +131,7 @@ def reminder(data: dict[str, Any]) -> str | None:
     noun = "item" if len(items) == 1 else "items"
     return (
         f"backlog: {len(items)} open {noun} "
-        f"(next: {lead!r}) -- `python -m glassbox.backlog due`"
+        f"(next: {lead!r}) -- `python -m clarapane.backlog due`"
     )
 
 

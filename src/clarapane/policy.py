@@ -24,7 +24,7 @@ class PolicyError(RuntimeError):
 class Workspace:
     root: Path
     # Never writable: agent source, VCS internals, virtualenv, secrets.
-    protected_write: tuple[str, ...] = ("src/glassbox", ".git", ".venv", ".env")
+    protected_write: tuple[str, ...] = ("src/clarapane", ".git", ".venv", ".env")
     # Never readable: secrets and machine-local state.
     denied_read: tuple[str, ...] = (".env", ".venv", ".git")
 

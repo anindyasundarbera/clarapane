@@ -1,7 +1,7 @@
 """CLI: run the raw-SDK agent on a task.
 
-    .venv/bin/python -m glassbox.cli "where is add defined?"
-    .venv/bin/python -m glassbox.cli "find the bug in add" --model glm-5.3
+    .venv/bin/python -m clarapane.cli "where is add defined?"
+    .venv/bin/python -m clarapane.cli "find the bug in add" --model glm-5.3
 
 Phase 2 is read-only: the tool set contains no mutating tool, so an agent that
 tries to edit will get a clear `unknown tool` error rather than a surprise write.
@@ -13,7 +13,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from . import profiles
+from . import identity, profiles
 from .backlog import BacklogError, load as load_backlog, reminder as backlog_reminder
 from .events import EventLog
 from .policy import PolicyError, Workspace
@@ -38,6 +38,7 @@ def build_agent(
     task: str = "",
     verbose: bool = True,
     log_path: Path | None = None,
+    app_name: str | None = None,
 ) -> tuple[Agent, EventLog]:
     provider = Provider(env_path=str(PROJECT_ROOT / ".env"))
     workspace = Workspace(root=workspace_root)
@@ -56,6 +57,7 @@ def build_agent(
     agent = Agent(
         provider, scoped, workspace, log,
         model=model, max_steps=max_steps, verbose=verbose,
+        app_name=identity.app_name(app_name),
         # The profile the run was launched under, recorded on run_start so the
         # trace answers "what was this run allowed to do?" in one record.
         run_start_fields={
@@ -67,7 +69,7 @@ def build_agent(
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(description="Glassbox coding agent (raw SDK)")
+    ap = argparse.ArgumentParser(description="Clarapane coding agent (raw SDK)")
     ap.add_argument("task", help="Natural-language task for the agent")
     ap.add_argument("--model", help="Override DEFAULT_OLLAMA_MODEL")
     ap.add_argument("--workspace", default=str(DEFAULT_WORKSPACE),
@@ -75,6 +77,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--max-steps", type=int, default=12)
     ap.add_argument("--profile", choices=["read_only", "edit", "exec"],
                     help="Capability profile. Defaults to inference from the task.")
+    ap.add_argument("--name", default=None,
+                    help=f"Display name for this run (default: ${identity.ENV_VAR} or Clarapane)")
     ap.add_argument("--quiet", action="store_true")
     args = ap.parse_args(argv)
 
@@ -85,12 +89,14 @@ def main(argv: list[str] | None = None) -> int:
             max_steps=args.max_steps,
             profile=args.profile,
             task=args.task,
+            app_name=args.name,
             verbose=not args.quiet,
         )
     except (PolicyError, RuntimeError) as exc:
         print(f"setup failed: {exc}", file=sys.stderr)
         return 2
 
+    print(identity.banner(args.name))
     print(f"task      : {args.task}")
     print(f"model     : {agent.model}")
     print(f"workspace : {agent.workspace.root}")

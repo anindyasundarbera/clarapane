@@ -10,10 +10,10 @@ from __future__ import annotations
 
 import pytest
 
-from glassbox import profiles
-from glassbox.registry import ToolError, ToolRegistry
-from glassbox.tools.finish_tool import register_finish_tool
-from glassbox.tools.read_tools import register_read_tools
+from clarapane import profiles
+from clarapane.registry import ToolError, ToolRegistry
+from clarapane.tools.finish_tool import register_finish_tool
+from clarapane.tools.read_tools import register_read_tools
 
 
 @pytest.fixture

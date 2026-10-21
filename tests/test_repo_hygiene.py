@@ -104,3 +104,62 @@ def test_agents_md_documents_defect_policy():
     assert "Defect policy" in text
     assert "BLOCKER" in text
     assert "audit_defects.py" in text
+
+
+# ------------------------------------------------------------------ identity
+
+
+def test_identity_defaults_to_clarapane(monkeypatch):
+    from clarapane import identity
+
+    monkeypatch.delenv(identity.ENV_VAR, raising=False)
+    assert identity.app_name() == "Clarapane"
+    assert identity.app_tag() == "clarapane"
+
+
+def test_identity_env_var_overrides_default(monkeypatch):
+    from clarapane import identity
+
+    monkeypatch.setenv(identity.ENV_VAR, "Glass Pane")
+    assert identity.app_name() == "Glass Pane"
+    assert identity.app_tag() == "glass-pane"  # filename-safe slug
+
+
+def test_identity_explicit_argument_beats_env(monkeypatch):
+    from clarapane import identity
+
+    monkeypatch.setenv(identity.ENV_VAR, "FromEnv")
+    assert identity.app_name("Explicit") == "Explicit"
+
+
+def test_identity_blank_env_falls_back(monkeypatch):
+    from clarapane import identity
+
+    monkeypatch.setenv(identity.ENV_VAR, "   ")
+    assert identity.app_name() == "Clarapane"
+
+
+def test_identity_is_read_at_call_time_not_import_time(monkeypatch):
+    """A running process must be able to change identity without a code change."""
+    from clarapane import identity
+
+    monkeypatch.setenv(identity.ENV_VAR, "First")
+    assert identity.app_name() == "First"
+    monkeypatch.setenv(identity.ENV_VAR, "Second")
+    assert identity.app_name() == "Second"
+
+
+def test_no_stale_package_name_remains():
+    """The old package name must not survive anywhere in tracked source."""
+    offenders = []
+    for path in PROJECT_ROOT.rglob("*"):
+        if not path.is_file() or ".git" in path.parts or ".venv" in path.parts:
+            continue
+        if path.suffix not in {".py", ".md", ".toml", ".json", ".sh", ""}:
+            continue
+        try:
+            if "glass" + "box" in path.read_text().lower():
+                offenders.append(str(path.relative_to(PROJECT_ROOT)))
+        except (UnicodeDecodeError, OSError):
+            continue
+    assert not offenders, f"stale package references: {offenders}"

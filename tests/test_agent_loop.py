@@ -10,11 +10,11 @@ import json
 
 import pytest
 
-from glassbox.events import EventLog
-from glassbox.registry import ToolRegistry, ToolSpec
-from glassbox.sdk_agent import Agent
-from glassbox.tools.finish_tool import register_finish_tool
-from glassbox.tools.read_tools import register_read_tools
+from clarapane.events import EventLog
+from clarapane.registry import ToolRegistry, ToolSpec
+from clarapane.sdk_agent import Agent
+from clarapane.tools.finish_tool import register_finish_tool
+from clarapane.tools.read_tools import register_read_tools
 
 
 class FakeProvider:
@@ -27,7 +27,7 @@ class FakeProvider:
         self.calls = 0
 
     def complete(self, messages, *, model=None, tools=None, **kw):
-        from glassbox.provider import Completion
+        from clarapane.provider import Completion
 
         self.calls += 1
         if not self.script:
@@ -164,13 +164,6 @@ def test_every_step_is_logged_with_a_run_id(agent_factory):
 # ---------------------------------------------------------------- stall recovery
 
 
-class SequenceProvider(FakeProvider):
-    """FakeProvider that also honours forced tool_choice, like the real provider."""
-
-    def complete(self, messages, *, model=None, tools=None, tool_choice=None, **kw):
-        return super().complete(messages, model=model, tools=tools, **kw)
-
-
 def test_prose_answer_is_recovered_into_finish(agent_factory):
     """The common real failure: correct work, wrong protocol. Recover, don't discard."""
     agent, log = agent_factory([
@@ -211,7 +204,7 @@ def test_recovery_refuses_success_when_mutation_was_offered_but_unused(
     the agent never called the mutating tool must NOT be reported as finished,
     even though the model was coerced into claiming it.
     """
-    from glassbox.registry import ToolRegistry, ToolSpec
+    from clarapane.registry import ToolRegistry, ToolSpec
 
     registry = ToolRegistry()
     register_read_tools(registry, workspace)
@@ -222,7 +215,7 @@ def test_recovery_refuses_success_when_mutation_was_offered_but_unused(
         risk="write", gate=True, handler=lambda **kw: {"ok": True},
     ))
 
-    provider = SequentialProvider([
+    provider = FakeProvider([
         {"content": "I fixed it, trust me", "finish_reason": "stop"},
         {"tool_calls": [FakeCall("finish", {"summary": "fixed", "evidence": "trust me"})]},
     ])
@@ -241,7 +234,7 @@ def test_recovery_refuses_success_when_mutation_was_offered_but_unused(
 
 def test_recovery_accepts_success_when_mutation_was_actually_used(workspace, tmp_path):
     """If the agent did call a mutating tool, a recovered finish is legitimate."""
-    from glassbox.registry import ToolRegistry, ToolSpec
+    from clarapane.registry import ToolRegistry, ToolSpec
 
     registry = ToolRegistry()
     register_read_tools(registry, workspace)
@@ -252,7 +245,7 @@ def test_recovery_accepts_success_when_mutation_was_actually_used(workspace, tmp
         risk="write", gate=True, handler=lambda **kw: {"ok": True},
     ))
 
-    provider = SequentialProvider([
+    provider = FakeProvider([
         {"tool_calls": [FakeCall("apply_edit", {}, "call_edit")]},
         {"content": "done", "finish_reason": "stop"},
         {"tool_calls": [FakeCall("finish", {"summary": "fixed", "evidence": "diff"},
@@ -279,8 +272,3 @@ def test_recovery_failure_falls_back_to_stall(agent_factory):
     assert result.finished is False
     assert "without calling a tool" in result.reason
     log.close()
-
-
-class SequentialProvider(FakeProvider):
-    def complete(self, messages, *, model=None, tools=None, tool_choice=None, **kw):
-        return super().complete(messages, model=model, tools=tools, **kw)

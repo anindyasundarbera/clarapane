@@ -159,7 +159,7 @@ def check_trace_schema(report: Report) -> None:
         report.ok("trace-schema: no trace to check")
         return
 
-    from glassbox import events_schema
+    from clarapane import events_schema
 
     problems = events_schema.audit(TRACE.read_text().splitlines())
     if problems:
@@ -198,13 +198,13 @@ def check_single_log_writer(report: Report) -> None:
 
 def check_backlog_integrity(report: Report) -> None:
     """Open work must be tracked with a trigger and acceptance criteria."""
-    from glassbox import backlog
+    from clarapane import backlog
 
     try:
         data = backlog.load()
     except Exception as exc:  # noqa: BLE001 - report, do not crash the audit
         report.add("MAJOR", "backlog-integrity", f"backlog unreadable: {exc}",
-                   "run python -m glassbox.backlog to inspect")
+                   "run python -m clarapane.backlog to inspect")
         return
 
     unstarted = [
@@ -241,7 +241,7 @@ def check_env_not_tracked(report: Report) -> None:
 
 def check_agent_invariants(report: Report) -> None:
     """Invariants that tests also cover, checked statically as a backstop."""
-    agent_src = (SRC / "glassbox" / "sdk_agent.py").read_text()
+    agent_src = (SRC / "clarapane" / "sdk_agent.py").read_text()
 
     if 'self.log.emit("stall"' in agent_src and agent_src.count('"run_end"') < 2:
         report.add(

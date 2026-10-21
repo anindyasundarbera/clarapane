@@ -84,7 +84,7 @@ def select(registry, profile: ProfileName):
     profile is applied, so it is also where escalation will hook in. A granted
     request will call `select()` again with a wider profile and the result will
     replace the tool list for the next model turn. Tracked in backlog.json;
-    run `python -m glassbox.backlog show request-capability-escalation`.
+    run `python -m clarapane.backlog show request-capability-escalation`.
     """
     if profile not in PROFILES:
         raise ValueError(f"unknown profile {profile!r}; choose from {sorted(PROFILES)}")

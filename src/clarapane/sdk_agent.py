@@ -16,12 +16,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from . import identity
 from .events import EventLog
 from .policy import PolicyError, Workspace
 from .provider import Completion, Provider
 from .registry import ToolError, ToolRegistry, ToolSpec
 
-SYSTEM_PROMPT = """You are a careful coding agent working inside a single workspace.
+SYSTEM_PROMPT = """You are {app_name}, a careful coding agent working inside a single workspace.
 
 Operating rules:
 1. Never guess about code. Before answering or editing, use the read tools to get
@@ -71,6 +72,7 @@ class Agent:
         max_steps: int = 12,
         verbose: bool = True,
         run_start_fields: dict[str, Any] | None = None,
+        app_name: str | None = None,
     ) -> None:
         self.provider = provider
         self.registry = registry
@@ -81,6 +83,8 @@ class Agent:
         self.verbose = verbose
         # Extra declared fields merged into run_start (e.g. profile, profile_source).
         self.run_start_fields = run_start_fields or {}
+        # Resolved once at construction so one run cannot change identity mid-flight.
+        self.app_name = identity.app_name(app_name)
 
     # ------------------------------------------------------------------ public
     def run(self, task: str) -> AgentResult:
@@ -93,6 +97,7 @@ class Agent:
             model=self.model,
             tools=self.registry.names(),
             workspace=str(self.workspace.root),
+            app_name=self.app_name,
             **self.run_start_fields,
         )
 
@@ -170,7 +175,8 @@ class Agent:
         tool_list = "\n".join(f"- {s.name}: {s.description}" for s in
                               (self.registry.get(n) for n in self.registry.names()))
         return [
-            {"role": "system", "content": SYSTEM_PROMPT.format(tool_list=tool_list)},
+            {"role": "system", "content": SYSTEM_PROMPT.format(
+                app_name=self.app_name, tool_list=tool_list)},
             {"role": "user", "content": task},
         ]
 
@@ -238,7 +244,7 @@ class Agent:
         is a request for more capability -- the planned behaviour is to record a
         `capability_requested` event and, once approved, swap in a wider profile
         for subsequent turns instead of just returning an error.
-        Tracked in backlog.json; see `python -m glassbox.backlog show request-capability-escalation`.
+        Tracked in backlog.json; see `python -m clarapane.backlog show request-capability-escalation`.
         """
         name = call.function.name
         started = time.perf_counter()

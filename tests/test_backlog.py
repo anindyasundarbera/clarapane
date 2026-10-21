@@ -6,7 +6,7 @@ import json
 
 import pytest
 
-from glassbox import backlog
+from clarapane import backlog
 
 
 @pytest.fixture

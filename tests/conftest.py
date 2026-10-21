@@ -17,7 +17,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 @pytest.fixture
 def workspace(tmp_path: Path):
     """A throwaway workspace with a couple of files, jailed like the real one."""
-    from glassbox.policy import Workspace
+    from clarapane.policy import Workspace
 
     (tmp_path / "pkg").mkdir()
     (tmp_path / "pkg" / "mod.py").write_text(

@@ -31,6 +31,7 @@ class RunStart(TypedDict, total=False):
     model: Required[str]
     tools: Required[list[str]]
     workspace: Required[str]
+    app_name: str  # product identity, overridable at runtime
     profile: str
     profile_source: str  # "cli" | "inferred"
 

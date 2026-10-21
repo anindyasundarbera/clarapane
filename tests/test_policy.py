@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from glassbox.policy import PolicyError, Workspace
+from clarapane.policy import PolicyError, Workspace
 
 
 def test_relative_path_inside_root(workspace):
@@ -31,10 +31,10 @@ def test_secret_read_denied(workspace):
 
 def test_source_write_denied_but_read_allowed(tmp_path):
     """The agent may read its own source to reason about it, but never edit it."""
-    (tmp_path / "src" / "glassbox").mkdir(parents=True)
-    (tmp_path / "src" / "glassbox" / "agent.py").write_text("x = 1\n")
+    (tmp_path / "src" / "clarapane").mkdir(parents=True)
+    (tmp_path / "src" / "clarapane" / "agent.py").write_text("x = 1\n")
     ws = Workspace(root=tmp_path)
 
-    assert ws.resolve("src/glassbox/agent.py").exists()
+    assert ws.resolve("src/clarapane/agent.py").exists()
     with pytest.raises(PolicyError, match="write denied"):
-        ws.resolve("src/glassbox/agent.py", write=True)
+        ws.resolve("src/clarapane/agent.py", write=True)

@@ -20,7 +20,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from glassbox.provider import Provider
+from clarapane.provider import Provider
 
 ENV_PATH = Path(__file__).resolve().parent.parent / ".env"
 
