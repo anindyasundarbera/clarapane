@@ -163,3 +163,69 @@ def test_no_stale_package_name_remains():
         except (UnicodeDecodeError, OSError):
             continue
     assert not offenders, f"stale package references: {offenders}"
+
+
+# ------------------------------------------------- config propagation guard
+
+
+def _env_keys(text: str) -> set[str]:
+    """Key names declared in a dotenv file.
+
+    Only real assignments and commented-out assignments count. Free-form prose in
+    comments is ignored: a comment containing "PYTHONPATH=src ... make run" is an
+    example command, not a setting, and treating it as one produces a false alarm.
+    """
+    keys: set[str] = set()
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped or "=" not in stripped:
+            continue
+
+        commented = stripped.startswith("#")
+        body = stripped.lstrip("#").strip()
+        if commented and not body.startswith(tuple("ABCDEFGHIJKLMNOPQRSTUVWXYZ")):
+            continue  # prose comment, not a documented key
+        key, _, value = body.partition("=")
+        key = key.strip()
+        # A real setting is a bare identifier with a single-token value. An example
+        # command (`PYTHONPATH=src .venv/bin/python ...`) has spaces in the value.
+        if key.isidentifier() and key.upper() == key and " " not in value.strip():
+            keys.add(key)
+    return keys
+
+
+def test_local_env_has_every_key_the_template_declares():
+    """Every key in .env.example must also exist in the real .env.
+
+    This is the check for a class of failure we actually hit: a new setting was
+    added to the template and to the code, but not to the running configuration, so
+    the feature was documented and inert. One agent action was completed and
+    adopted while the peer surface was never touched.
+
+    Presence is all that is asserted -- values are never read, printed, or compared.
+    """
+    example = PROJECT_ROOT / ".env.example"
+    env = PROJECT_ROOT / ".env"
+    if not env.exists():
+        pytest.skip("no local .env (CI or fresh clone)")
+
+    declared = _env_keys(example.read_text())
+    present = _env_keys(env.read_text())
+
+    missing = sorted(declared - present)
+    assert not missing, (
+        f".env.example declares keys missing from .env: {missing}. "
+        "Add them to .env so the feature is not inert at runtime."
+    )
+
+
+def test_identity_variable_is_documented_and_wired():
+    """The name override must exist in the template, the module, and the CLI."""
+    from clarapane import identity
+
+    example = (PROJECT_ROOT / ".env.example").read_text()
+    assert identity.ENV_VAR in example, f"{identity.ENV_VAR} missing from .env.example"
+
+    cli = (PROJECT_ROOT / "src" / "clarapane" / "cli.py").read_text()
+    assert '"--name"' in cli, "CLI must expose --name"
+    assert "identity.app_name" in cli, "CLI must resolve the name through identity"
