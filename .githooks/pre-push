@@ -1,0 +1,40 @@
+#!/bin/sh
+# Refuse to push a protected branch directly.
+#
+# The authoritative control is the GitHub ruleset (a local hook is bypassed with
+# --no-verify or by pushing from another clone). This hook exists so the mistake is
+# caught at the earliest possible moment, with a message that says what to do instead.
+
+protected="${PROTECTED_BRANCHES:-main}"
+remote="$1"
+
+while read -r local_ref local_sha remote_ref remote_sha; do
+  case "$remote_ref" in
+    refs/heads/*) target="${remote_ref#refs/heads/}" ;;
+    *) continue ;;
+  esac
+
+  for branch in $protected; do
+    if [ "$target" = "$branch" ]; then
+      if [ "${ALLOW_PROTECTED_PUSH:-0}" = "1" ]; then
+        echo "pre-push: ALLOW_PROTECTED_PUSH=1 -- pushing to '$branch' anyway." >&2
+        break
+      fi
+      cat >&2 <<EOF
+pre-push: refusing to push directly to '$branch' on '$remote'
+
+Push the feature branch and open a pull request instead:
+  git push -u origin \$(git symbolic-ref --short HEAD)
+  gh pr create --fill
+
+Main is protected by a GitHub ruleset; a direct push would be rejected there too,
+so this hook only saves you the round trip.
+
+Deliberate override (will be reported by scripts/audit_defects.py):
+  ALLOW_PROTECTED_PUSH=1 git push ...
+EOF
+      exit 1
+    fi
+  done
+done
+exit 0

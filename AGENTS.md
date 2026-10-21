@@ -125,6 +125,43 @@ different payload cannot cause a write.
 Honest limit: this proves *what* was approved and *by whom*. It does not prove the
 operator read or understood it.
 
+## 1c. Never commit or push directly to main
+
+`main` is protected by a GitHub ruleset (id 25580492, `enforcement: active`,
+`current_user_can_bypass: never`). Every change reaches it through a pull request.
+
+This was a real violation: 28 commits landed directly on `main`, and one was pushed.
+The ruleset now makes that impossible server-side, regardless of local configuration.
+
+Three layers, deliberately redundant:
+
+| Layer | Where | What it does |
+|---|---|---|
+| Preventive | `.githooks/pre-commit` | Refuses a commit while HEAD is a protected branch |
+| Preventive | `.githooks/pre-push` | Refuses a push whose target is a protected branch |
+| Authoritative | GitHub ruleset on `main` | Rejects the push server-side; no local bypass exists |
+| Detective | `audit_defects.py` → `no-direct-main-commits` | Reports commits on main with no PR reference |
+
+A local hook is a courtesy, not a control: `--no-verify` and a different clone both
+bypass it. The ruleset is the control. The audit is how you find out when a control
+was bypassed.
+
+**Workflow:**
+
+```bash
+git switch -c feat/<short-description>
+# ... work, make commit MSG="..." ...
+git push -u origin HEAD
+gh pr create --fill
+gh pr merge --squash --delete-branch
+```
+
+A squash merge records the PR number in the commit, which is what the audit looks
+for as evidence of review.
+
+Deliberate override for an emergency, visible to the audit afterwards:
+`ALLOW_PROTECTED_COMMIT=1` / `ALLOW_PROTECTED_PUSH=1`.
+
 ## 2. Commit messages
 
 Format: **Conventional Commits**, enforced by `.githooks/commit-msg`.

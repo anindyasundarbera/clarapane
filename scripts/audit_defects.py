@@ -45,6 +45,8 @@ FIX_CUTOFFS: dict[str, str] = {
     "one-finish-per-run": "2026-10-22T00:45:00+05:30",
     # approvals must name an operator and bind to a payload fingerprint
     "approval-binding": "2026-10-22T01:00:00+05:30",
+    # every commit on main must arrive through a reviewed pull request
+    "no-direct-main-commits": "2026-10-22T00:40:00+05:30",
 }
 
 
@@ -323,6 +325,76 @@ def check_one_finish_event_per_run(report: Report) -> None:
         report.ok("one-finish-per-run")
 
 
+def check_no_direct_main_commits(report: Report) -> None:
+    """Commits that landed on main without going through a pull request.
+
+    A local hook prevents this and a GitHub ruleset blocks it, but both can be
+    bypassed (--no-verify, another clone, an admin override). This is the detective
+    control: it reports what actually happened rather than what was supposed to.
+
+    A commit counts as reviewed when its message carries a PR reference in the Refs:
+    footer, which `gh pr merge --squash` produces.
+    """
+    import re
+    import subprocess
+
+    def git(*args: str) -> str:
+        return subprocess.run(["git", *args], cwd=PROJECT_ROOT,
+                              capture_output=True, text=True).stdout
+
+    # Only commits reachable from main count; a feature branch may hold whatever.
+    main_ref = "origin/main"
+    if subprocess.run(["git", "rev-parse", "--verify", main_ref], cwd=PROJECT_ROOT,
+                      capture_output=True).returncode != 0:
+        main_ref = "main"
+    if subprocess.run(["git", "rev-parse", "--verify", main_ref], cwd=PROJECT_ROOT,
+                      capture_output=True).returncode != 0:
+        report.ok("no-direct-main-commits: no main branch")
+        return
+
+    raw = git("log", "--format=%H%x00%s%x00%b%x00", main_ref)
+    parts = [x for x in raw.split("\x00")]
+    # Bootstrap commits created before the policy are exempt by design.
+    BOOTSTRAP = set()
+    for line in git("log", "--format=%h %s", main_ref).splitlines():
+        if line.split(" ", 1)[-1].startswith("chore: establish repo guardrails"):
+            BOOTSTRAP.add(line.split(" ", 1)[0])
+
+    # Commits made before the policy existed are history, not violations. Their
+    # timestamps, not their subjects, decide this, so a bootstrap-shaped subject
+    # cannot be used to sneak a later commit past the check.
+    cutoff_text = FIX_CUTOFFS["no-direct-main-commits"]
+    from datetime import datetime
+
+    cutoff = datetime.fromisoformat(cutoff_text)
+
+    unreviewed: list[str] = []
+    for i in range(0, len(parts) - 2, 3):
+        sha, subject, body = parts[i].strip(), parts[i + 1], parts[i + 2]
+        if not sha:
+            continue
+        committed = git("show", "-s", "--format=%cI", sha).strip()
+        try:
+            when = datetime.fromisoformat(committed)
+        except ValueError:
+            when = cutoff
+        if when <= cutoff:
+            continue
+        if re.search(r"^Refs:.*(#|pull/)\d+", body, re.MULTILINE):
+            continue
+        unreviewed.append(f"{sha[:7]} {subject[:48]}")
+
+    if unreviewed:
+        report.add(
+            "MAJOR", "no-direct-main-commits",
+            f"{len(unreviewed)} commit(s) on {main_ref} carry no PR reference: "
+            + "; ".join(unreviewed[:3]),
+            "land changes via a pull request; the squash commit records the PR number",
+        )
+    else:
+        report.ok("no-direct-main-commits")
+
+
 def check_approval_binding(report: Report) -> None:
     """Every approval must name an accountable operator and bind to a payload.
 
@@ -428,6 +500,7 @@ def check_all() -> Report:
         check_env_matches_template,
         check_one_finish_event_per_run,
         check_approval_binding,
+        check_no_direct_main_commits,
     ):
         check(report)
     return report
