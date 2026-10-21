@@ -21,7 +21,9 @@ SUBJECT_RE = re.compile(
 )
 EXEMPT_PREFIXES = ("Merge ", "Revert ", "fixup! ", "squash! ")
 MAX_SUBJECT_LINE = 72
-REQUIRED_FOOTER_HINTS = ("Refs:",)
+# Anchored to line start so a body sentence mentioning "Refs:" does not satisfy
+# the footer requirement.
+REFS_RE = re.compile(r"^Refs:", re.MULTILINE)
 
 
 def git(*args: str) -> str:
@@ -74,7 +76,7 @@ def check(sha: str, message: str) -> list[str]:
     body = "\n".join(lines[1:]).strip()
     if not body:
         problems.append(f"{sha[:8]}: missing body (explain Why / What / Decision)")
-    elif not any(hint in body for hint in REQUIRED_FOOTER_HINTS):
+    elif not REFS_RE.search(body):
         problems.append(
             f"{sha[:8]}: body has no 'Refs:' footer (backlog id, phase, or issue link)"
         )
