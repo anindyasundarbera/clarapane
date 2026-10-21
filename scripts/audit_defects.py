@@ -34,21 +34,29 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 
-# Runs started before this instant predate the terminal-event fix (commit ece5b5d,
-# 2026-10-21T23:43+05:30). Violations are reported as historical rather than as
-# live defects, because rewriting the trace to hide the gap would defeat the point.
-TERMINAL_EVENT_FIX_CUTOFF = "2026-10-21T23:43:24+05:30"
+# Each check that can be invalidated by old data names the instant its fix landed.
+# Runs started at or before that instant are reported as historical, not as live
+# defects: rewriting old trace records to satisfy a new rule would erase the very
+# evidence of the bug the rule exists for.
+FIX_CUTOFFS: dict[str, str] = {
+    # run_end emitted on every exit path (commit ece5b5d)
+    "trace-terminal": "2026-10-21T23:43:24+05:30",
+    # one `finish` event per run, always carrying `verified`
+    "one-finish-per-run": "2026-10-22T00:45:00+05:30",
+}
 
 
-def _is_pre_fix(run_id: str) -> bool:
-    """run_id format: YYYYMMDDTHHMMSSZ-xxxxxx (UTC). Compare on the UTC instant."""
+def _predates(run_id: str, check: str) -> bool:
+    """True when this run started before the fix named by `check`."""
+    cutoff_text = FIX_CUTOFFS.get(check)
+    if cutoff_text is None:
+        return False
     try:
-        stamp = run_id.split("-", 1)[0]  # 20261021T170125Z
         from datetime import datetime
-        started = datetime.strptime(stamp, "%Y%m%dT%H%M%SZ")
-        cutoff = datetime.fromisoformat(TERMINAL_EVENT_FIX_CUTOFF)
-        cutoff_utc = cutoff.replace(tzinfo=None) - cutoff.utcoffset()
-        return started <= cutoff_utc
+
+        started = datetime.strptime(run_id.split("-", 1)[0], "%Y%m%dT%H%M%SZ")
+        cutoff = datetime.fromisoformat(cutoff_text)
+        return started <= (cutoff.replace(tzinfo=None) - cutoff.utcoffset())
     except (ValueError, AttributeError):
         return False
 
@@ -111,8 +119,8 @@ def check_trace_terminal_events(report: Report) -> None:
         for rid, counts in per_run.items()
         if counts["run_start"] != counts["run_end"]
     ]
-    live = [b for b in bad if not _is_pre_fix(b[0])]
-    legacy = [b for b in bad if _is_pre_fix(b[0])]
+    live = [b for b in bad if not _predates(b[0], "trace-terminal")]
+    legacy = [b for b in bad if _predates(b[0], "trace-terminal")]
     if live:
         report.add(
             "MAJOR", "trace-terminal",
@@ -135,18 +143,33 @@ def check_no_unverified_success(report: Report) -> None:
         report.ok("no-unverified-success: no trace to check")
         return
 
-    offenders = []
+    # A verified=False event is CORRECT when the run also reports failure. The
+    # defect is a run whose terminal reason claims success while its own finish
+    # event says the claim was unproven.
+    SUCCESS_REASONS = {"finish", "finish_recovered"}
+    finishes: dict[str, dict] = {}
+    endings: dict[str, str] = {}
     for line in TRACE.read_text().splitlines():
         if not line.strip():
             continue
         record = json.loads(line)
-        if record["event"] == "finish" and record.get("verified") is False:
-            offenders.append(record["run_id"])
+        if record["event"] == "finish":
+            finishes[record["run_id"]] = record
+        elif record["event"] == "run_end":
+            endings[record["run_id"]] = record.get("reason", "")
+
+    offenders = [
+        run_id for run_id, record in finishes.items()
+        if record.get("verified") is False
+        and endings.get(run_id) in SUCCESS_REASONS
+        and not _predates(run_id, "no-unverified-success")
+    ]
 
     if offenders:
         report.add(
             "BLOCKER", "no-unverified-success",
-            f"{len(set(offenders))} run(s) recorded finish.verified=False: {sorted(set(offenders))}",
+            f"{len(set(offenders))} run(s) claim success while finish.verified=False: "
+            f"{sorted(set(offenders))}",
             "a run must not be reported as finished when its claim is unproven",
         )
     else:
@@ -278,7 +301,7 @@ def check_one_finish_event_per_run(report: Report) -> None:
         if not line.strip():
             continue
         record = json.loads(line)
-        if record["event"] == "finish" and not _is_pre_fix(record["run_id"]):
+        if record["event"] == "finish" and not _predates(record["run_id"], "one-finish-per-run"):
             finishes[record["run_id"]].append(record)
 
     problems = []
