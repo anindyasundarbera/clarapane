@@ -265,3 +265,56 @@ def test_pre_commit_hook_is_installed_and_executable():
         capture_output=True, text=True,
     ).stdout.strip()
     assert configured == ".githooks", f"core.hooksPath is {configured!r}, not '.githooks'"
+
+
+# ---------------------------------------------------- approval integrity (rule)
+
+
+def test_no_gate_accepts_a_bare_assent():
+    """A permissive word must never constitute approval (AGENTS.md rule 1b).
+
+    Regression guard for a real defect: "proceed" was treated as consent for work
+    the operator had not seen. Consent must bind to the exact payload.
+    """
+    import builtins
+
+    from clarapane.gate import InteractiveGate, fingerprint
+
+    args = {"path": "a.py", "old_str": "x", "new_str": "y"}
+    fp = fingerprint("apply_edit", args)
+    permissive = ["y", "yes", "proceed", "ok", "sure", "", "lgtm", "approve"]
+
+    class TTY:
+        def isatty(self):
+            return True
+
+    original = builtins.input
+    try:
+        for answer in permissive:
+            builtins.input = lambda prompt="", a=answer: a
+            gate = InteractiveGate(stream=TTY(), operator="tester")
+            decision = gate.decide("apply_edit", args)
+            assert decision.approved is False, f"{answer!r} was accepted as approval"
+            assert decision.fingerprint == fp
+    finally:
+        builtins.input = original
+
+
+def test_approval_decisions_always_carry_operator_and_fingerprint():
+    """No gate may produce a decision that cannot be attributed or bound."""
+    from clarapane.gate import InteractiveGate, PolicyGate
+
+    args = {"path": "a.py", "old_str": "x", "new_str": "y"}
+
+    class NoTTY:
+        def isatty(self):
+            return False
+
+    for gate in (
+        PolicyGate(allow_writes=True, reason="t"),
+        PolicyGate(allow_writes=False, reason="t"),
+        InteractiveGate(stream=NoTTY(), operator="tester"),
+    ):
+        decision = gate.decide("apply_edit", args)
+        assert decision.operator, "decision has no accountable operator"
+        assert len(decision.fingerprint) == 12, "decision is not bound to a payload"

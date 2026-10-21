@@ -84,10 +84,21 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--max-steps", type=int, default=12)
     ap.add_argument("--profile", choices=["read_only", "edit", "exec"],
                     help="Capability profile. Defaults to inference from the task.")
+    ap.add_argument("--operator", default=None,
+                    help="Accountable human for approvals (default: $CLARAPANE_OPERATOR_ID or OS login)")
+    ap.add_argument("--yes", action="store_true",
+                    help="Headless approval of writes. Recorded as actor=policy, not a human.")
     ap.add_argument("--name", default=None,
                     help=f"Display name for this run (default: ${identity.ENV_VAR} or Clarapane)")
     ap.add_argument("--quiet", action="store_true")
     args = ap.parse_args(argv)
+
+    if args.yes:
+        chosen_gate = PolicyGate(allow_writes=True, reason="--yes")
+    elif args.profile in ("edit", "exec"):
+        chosen_gate = InteractiveGate(operator=args.operator)
+    else:
+        chosen_gate = PolicyGate(allow_writes=False, reason="read-only profile")
 
     try:
         agent, log = build_agent(
@@ -97,6 +108,7 @@ def main(argv: list[str] | None = None) -> int:
             profile=args.profile,
             task=args.task,
             app_name=args.name,
+            gate=chosen_gate,
             verbose=not args.quiet,
         )
     except (PolicyError, RuntimeError) as exc:
@@ -104,6 +116,7 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     print(identity.banner(args.name))
+    print(f"operator  : {identity.operator(args.operator)}")
     print(f"task      : {args.task}")
     print(f"model     : {agent.model}")
     print(f"workspace : {agent.workspace.root}")

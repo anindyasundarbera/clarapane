@@ -26,6 +26,13 @@ import os
 DEFAULT_APP_NAME = "Clarapane"
 ENV_VAR = "CLARAPANE_APP_NAME"
 
+# The human accountable for approving mutations. Approvals are recorded against
+# this identifier, so the trace answers "who allowed this write?" and not merely
+# "a human did". Defaults to the OS login: an empty identity would make every
+# approval anonymous, which defeats the purpose of asking.
+OPERATOR_ENV_VAR = "CLARAPANE_OPERATOR_ID"
+DEFAULT_OPERATOR = "unknown-operator"
+
 # Short tag used in filenames (lowercase, no spaces). Kept separate from the
 # display name so a long name cannot produce awkward paths.
 DEFAULT_TAG = "clarapane"
@@ -34,6 +41,26 @@ DEFAULT_TAG = "clarapane"
 def app_name(explicit: str | None = None) -> str:
     """Return the display name for this run."""
     return (explicit or os.environ.get(ENV_VAR) or DEFAULT_APP_NAME).strip() or DEFAULT_APP_NAME
+
+
+def operator(explicit: str | None = None) -> str:
+    """Return the accountable human identifier for this run.
+
+    Resolution order: explicit argument, then CLARAPANE_OPERATOR_ID, then the OS
+    login, then a loud placeholder. Never returns an empty string -- an anonymous
+    approval is not traceable and would silently weaken the audit trail.
+    """
+    from getpass import getuser
+
+    candidate = explicit or os.environ.get(OPERATOR_ENV_VAR)
+    if candidate and candidate.strip():
+        return candidate.strip()
+
+    try:
+        login = getuser()
+    except Exception:  # noqa: BLE001 - getuser can fail in a bare container
+        login = ""
+    return login.strip() or DEFAULT_OPERATOR
 
 
 def app_tag(explicit: str | None = None) -> str:

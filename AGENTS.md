@@ -101,6 +101,30 @@ This is enforced, not advised:
 
 Override deliberately and rarely: `ALLOW_UNSTAGED=1 git commit ...`
 
+## 1b. Approval must bind to the exact work
+
+A bare **"proceed" is not an approval**. It authorizes *future* work rather than the
+work in front of the operator, and it leaves no record of what was consented to.
+This was a real defect: `proceed` was accepted as consent for an edit nobody had
+reviewed.
+
+Approval requires both:
+
+1. **An accountable operator.** `CLARAPANE_OPERATOR_ID`, else the OS login. Never
+   empty. A policy approval records `actor="policy"` and `operator="policy:<reason>"`
+   and must never claim a human approved.
+2. **A binding fingerprint.** A 12-hex hash of the exact tool + payload. The operator
+   types it to approve, the loop re-derives it before executing, and a mismatch
+   aborts. The fingerprint is recorded in the `approval` event.
+
+Enforced by `tests/test_repo_hygiene.py`, which asserts that no gate accepts any of
+`y / yes / proceed / ok / sure / lgtm / approve / ""`, and that every decision carries
+an operator and a fingerprint. Enforced again in the loop, so a gate that approves a
+different payload cannot cause a write.
+
+Honest limit: this proves *what* was approved and *by whom*. It does not prove the
+operator read or understood it.
+
 ## 2. Commit messages
 
 Format: **Conventional Commits**, enforced by `.githooks/commit-msg`.

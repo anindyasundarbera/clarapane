@@ -73,13 +73,20 @@ class Finish(TypedDict, total=False):
 
 
 class Approval(TypedDict, total=False):
-    """A gate decision on a mutating tool call."""
+    """A gate decision on a mutating tool call.
+
+    `operator` names the accountable human (or the policy identity); `fingerprint`
+    binds the decision to the exact payload, so the trace proves *what* was approved
+    and *by whom*, not merely that something was.
+    """
 
     step: Required[int]
     tool: Required[str]
     approved: Required[bool]
     actor: Required[str]
     reason: Required[str]
+    operator: str
+    fingerprint: str
 
 
 class InjectionBlocked(TypedDict, total=False):

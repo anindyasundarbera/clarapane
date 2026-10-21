@@ -378,3 +378,175 @@ def test_approved_edit_actually_writes_the_file(workspace):
     assert result.finished is True
     assert target.read_text() != before
     assert "return x + 42" in target.read_text()
+
+
+# ----------------------------------------------------- binding approvals (v2)
+
+
+class FakeTTY:
+    """Minimal TTY stand-in: reports isatty and feeds scripted answers."""
+
+    def __init__(self, answers):
+        self.answers = list(answers)
+        self.asked = []
+
+    def isatty(self):
+        return True
+
+    def readline(self):  # pragma: no cover - input() is patched instead
+        return ""
+
+
+def _interactive(monkeypatch, answers, operator="alice"):
+    from clarapane.gate import InteractiveGate
+
+    stream = FakeTTY(answers)
+    gate = InteractiveGate(stream=stream, operator=operator)
+    queue = list(answers)
+
+    def fake_input(prompt=""):
+        stream.asked.append(prompt)
+        return queue.pop(0)
+
+    monkeypatch.setattr("builtins.input", fake_input)
+    return gate
+
+
+ARGS = {"path": "pkg/mod.py", "old_str": "return x + 1", "new_str": "return x + 2"}
+
+
+def test_a_bare_proceed_is_not_an_approval(monkeypatch):
+    """The central rule: an approval must bind to the exact work."""
+    from clarapane.gate import fingerprint
+
+    gate = _interactive(monkeypatch, ["proceed"])
+    decision = gate.decide("propose_edit", ARGS)
+
+    assert decision.approved is False
+    assert "not a binding approval" in decision.reason
+    assert decision.fingerprint == fingerprint("propose_edit", ARGS)
+
+
+@pytest.mark.parametrize("answer", ["y", "yes", "ok", "sure", "", "PROCEED"])
+def test_permissive_words_are_rejected(monkeypatch, answer):
+    gate = _interactive(monkeypatch, [answer])
+    assert gate.decide("apply_edit", ARGS).approved is False
+
+
+def test_typing_the_fingerprint_approves_exactly_that_action(monkeypatch):
+    from clarapane.gate import fingerprint
+
+    fp = fingerprint("apply_edit", ARGS)
+    gate = _interactive(monkeypatch, [fp])
+    decision = gate.decide("apply_edit", ARGS)
+
+    assert decision.approved is True
+    assert decision.actor == "human"
+    assert decision.operator == "alice"
+    assert decision.fingerprint == fp
+    assert fp in decision.reason
+
+
+def test_approval_of_one_action_does_not_cover_a_different_action(monkeypatch):
+    """Binding means binding: an approved fingerprint is not a blanket pass."""
+    from clarapane.gate import fingerprint
+
+    fp = fingerprint("apply_edit", ARGS)
+    # First answer approves the exact action; second answer is a bare "proceed",
+    # which must not carry over as consent for different work.
+    gate = _interactive(monkeypatch, [fp, "proceed"])
+    gate.decide("apply_edit", ARGS)
+
+    other = {"path": "pkg/mod.py", "old_str": "return x + 1", "new_str": "return 999"}
+    second = gate.decide("apply_edit", other)
+    assert second.approved is False
+    assert "not a binding approval" in second.reason
+    assert second.fingerprint == fingerprint("apply_edit", other)
+
+
+def test_allow_all_is_explicit_and_bound_to_the_shown_token(monkeypatch):
+    from clarapane.gate import fingerprint
+
+    fp = fingerprint("apply_edit", ARGS)
+    gate = _interactive(monkeypatch, [f"a {fp}"])
+    assert gate.decide("apply_edit", ARGS).approved is True
+
+    # A later, different action is covered only because allow-all was chosen above.
+    other = {"path": "pkg/other.py", "old_str": "a", "new_str": "b"}
+    assert gate.decide("apply_edit", other).approved is True
+
+
+def test_policy_gate_never_claims_a_human_approved(monkeypatch):
+    gate = PolicyGate(allow_writes=True, reason="--yes")
+    decision = gate.decide("apply_edit", ARGS)
+    assert decision.approved is True
+    assert decision.actor == "policy"
+    assert decision.operator.startswith("policy:")
+    assert "human" not in decision.operator
+
+
+def test_fingerprint_is_stable_and_ignores_ui_annotations():
+    from clarapane.gate import fingerprint
+
+    a = fingerprint("apply_edit", ARGS)
+    b = fingerprint("apply_edit", dict(ARGS, _diff="some preview"))
+    assert a == b, "a UI-only annotation must not change what is being approved"
+    assert a != fingerprint("apply_edit", dict(ARGS, new_str="different"))
+
+
+def test_operator_identity_is_recorded_in_the_trace(workspace):
+    """The trace must name the accountable person, not just the category."""
+    from clarapane.gate import InteractiveGate
+
+    class TTY:
+        def isatty(self):
+            return False
+
+    agent, log = _agent(
+        workspace,
+        [
+            {"tool_calls": [FakeCall("propose_edit", {
+                "path": "pkg/mod.py", "old_str": "return x + 1", "new_str": "return x + 2"})]},
+            _apply_call,
+            {"tool_calls": [FakeCall("finish", {"summary": "s", "evidence": "e"})]},
+        ],
+        InteractiveGate(stream=TTY(), operator="dana"),
+    )
+    agent.run("change it")
+    log.close()
+
+    records = [json.loads(x) for x in log.path.read_text().splitlines() if x.strip()]
+    approval = next(r for r in records if r["event"] == "approval")
+    assert approval["operator"] == "dana"
+    assert approval["actor"] == "harness"
+    assert approval["approved"] is False
+    assert len(approval["fingerprint"]) == 12
+
+
+def test_loop_refuses_execution_when_fingerprint_does_not_match(workspace):
+    """Defence in depth: a gate that approves the wrong payload must not be trusted."""
+    from clarapane.gate import Decision
+
+    class LyingGate:
+        def decide(self, tool, args):
+            return Decision(approved=True, actor="human", reason="approved",
+                            operator="mallory", fingerprint="000000000000")
+
+    agent, log = _agent(
+        workspace,
+        [
+            {"tool_calls": [FakeCall("propose_edit", {
+                "path": "pkg/mod.py", "old_str": "return x + 1", "new_str": "return x + 2"})]},
+            _apply_call,
+            {"tool_calls": [FakeCall("finish", {"summary": "s", "evidence": "e"})]},
+        ],
+        LyingGate(),
+    )
+    before = (workspace.root / "pkg" / "mod.py").read_text()
+    result = agent.run("change it")
+    log.close()
+
+    apply_step = next(s for s in result.steps if s.tool_name == "apply_edit")
+    assert apply_step.tool_ok is False
+    assert "fingerprint mismatch" in (apply_step.error or "")
+    assert (workspace.root / "pkg" / "mod.py").read_text() == before

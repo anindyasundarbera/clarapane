@@ -43,6 +43,8 @@ FIX_CUTOFFS: dict[str, str] = {
     "trace-terminal": "2026-10-21T23:43:24+05:30",
     # one `finish` event per run, always carrying `verified`
     "one-finish-per-run": "2026-10-22T00:45:00+05:30",
+    # approvals must name an operator and bind to a payload fingerprint
+    "approval-binding": "2026-10-22T01:00:00+05:30",
 }
 
 
@@ -321,6 +323,40 @@ def check_one_finish_event_per_run(report: Report) -> None:
         report.ok("one-finish-per-run")
 
 
+def check_approval_binding(report: Report) -> None:
+    """Every approval must name an accountable operator and bind to a payload.
+
+    Two defects this closes: an approval recorded only `actor="human"`, which is a
+    category rather than a person; and an approval with no fingerprint, so the trace
+    could not prove which action the operator actually authorized.
+    """
+    if not TRACE.exists():
+        report.ok("approval-binding: no trace to check")
+        return
+
+    problems: list[str] = []
+    for line in TRACE.read_text().splitlines():
+        if not line.strip():
+            continue
+        record = json.loads(line)
+        if record["event"] != "approval":
+            continue
+        if _predates(record["run_id"], "approval-binding"):
+            continue
+        missing = [f for f in ("operator", "fingerprint") if not record.get(f)]
+        if missing:
+            problems.append(f"{record['run_id']} approval missing {missing}")
+
+    if problems:
+        report.add(
+            "MAJOR", "approval-binding",
+            "; ".join(problems[:3]),
+            "record who approved and a fingerprint of the exact payload",
+        )
+    else:
+        report.ok("approval-binding")
+
+
 def check_evidence_not_abandoned(report: Report) -> None:
     """No tracked run artifact may be modified but unstaged.
 
@@ -391,6 +427,7 @@ def check_all() -> Report:
         check_evidence_not_abandoned,
         check_env_matches_template,
         check_one_finish_event_per_run,
+        check_approval_binding,
     ):
         check(report)
     return report

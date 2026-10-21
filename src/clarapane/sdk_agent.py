@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from . import gate as gate_mod
 from . import identity, safety
 from .events import EventLog
 from .policy import PolicyError, Workspace
@@ -292,10 +293,23 @@ class Agent:
                                   started, messages, spec=spec)
             decision = self.gate.decide(name, args)
             self.log.emit("approval", step=index, tool=name, **decision.as_dict())
+
             if not decision.approved:
                 return self._fail(
                     call, index, name,
                     f"denied ({decision.actor}): {decision.reason}",
+                    started, messages, spec=spec,
+                )
+
+            # Enforce the binding: an approval authorizes one exact payload. If the
+            # gate approved a different fingerprint than what will now execute, the
+            # approval does not cover this action.
+            expected = gate_mod.fingerprint(name, args)
+            if decision.fingerprint != expected:
+                return self._fail(
+                    call, index, name,
+                    "approval fingerprint mismatch: the approved action does not match "
+                    "the action being executed",
                     started, messages, spec=spec,
                 )
 
