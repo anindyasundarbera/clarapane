@@ -1,0 +1,123 @@
+"""CLI: run the raw-SDK agent on a task.
+
+    .venv/bin/python -m glassbox.cli "where is add defined?"
+    .venv/bin/python -m glassbox.cli "find the bug in add" --model glm-5.3
+
+Phase 2 is read-only: the tool set contains no mutating tool, so an agent that
+tries to edit will get a clear `unknown tool` error rather than a surprise write.
+"""
+
+from __future__ import annotations
+
+import argparse
+import sys
+from pathlib import Path
+
+from . import profiles
+from .backlog import BacklogError, load as load_backlog, reminder as backlog_reminder
+from .events import EventLog
+from .policy import PolicyError, Workspace
+from .profiles import ProfileName
+from .provider import Provider
+from .registry import ToolRegistry
+from .sdk_agent import Agent
+from .tools.finish_tool import register_finish_tool
+from .tools.read_tools import register_read_tools
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+DEFAULT_WORKSPACE = PROJECT_ROOT / "sandbox"
+RUNS_DIR = PROJECT_ROOT / "runs"
+
+
+def build_agent(
+    *,
+    workspace_root: Path,
+    model: str | None,
+    max_steps: int,
+    profile: ProfileName | None = None,
+    task: str = "",
+    verbose: bool = True,
+    log_path: Path | None = None,
+) -> tuple[Agent, EventLog]:
+    provider = Provider(env_path=str(PROJECT_ROOT / ".env"))
+    workspace = Workspace(root=workspace_root)
+
+    # Register everything that exists, then let the profile decide what the model
+    # is allowed to see. Registration is a superset; the profile is the policy.
+    registry = ToolRegistry()
+    register_read_tools(registry, workspace)
+    register_finish_tool(registry)
+
+    chosen: ProfileName = profile or profiles.infer(task)
+    scoped = profiles.select(registry, chosen)
+
+    log = EventLog(log_path or RUNS_DIR / "runs.jsonl")
+    log.emit(
+        "profile_selected",
+        profile=chosen,
+        source="cli" if profile else "inferred",
+        tools=scoped.names(),
+        description=profiles.DESCRIPTIONS[chosen],
+    )
+
+    agent = Agent(
+        provider, scoped, workspace, log,
+        model=model, max_steps=max_steps, verbose=verbose,
+    )
+    return agent, log
+
+
+def main(argv: list[str] | None = None) -> int:
+    ap = argparse.ArgumentParser(description="Glassbox coding agent (raw SDK)")
+    ap.add_argument("task", help="Natural-language task for the agent")
+    ap.add_argument("--model", help="Override DEFAULT_OLLAMA_MODEL")
+    ap.add_argument("--workspace", default=str(DEFAULT_WORKSPACE),
+                    help="Workspace root the agent is jailed to")
+    ap.add_argument("--max-steps", type=int, default=12)
+    ap.add_argument("--profile", choices=["read_only", "edit", "exec"],
+                    help="Capability profile. Defaults to inference from the task.")
+    ap.add_argument("--quiet", action="store_true")
+    args = ap.parse_args(argv)
+
+    try:
+        agent, log = build_agent(
+            workspace_root=Path(args.workspace),
+            model=args.model,
+            max_steps=args.max_steps,
+            profile=args.profile,
+            task=args.task,
+            verbose=not args.quiet,
+        )
+    except (PolicyError, RuntimeError) as exc:
+        print(f"setup failed: {exc}", file=sys.stderr)
+        return 2
+
+    print(f"task      : {args.task}")
+    print(f"model     : {agent.model}")
+    print(f"workspace : {agent.workspace.root}")
+    print(f"tools     : {', '.join(agent.registry.names())}")
+
+    # Surface outstanding deferred work on every run. Decisions NOT to build
+    # something are easy to lose; this keeps them in front of whoever is driving.
+    try:
+        nudge = backlog_reminder(load_backlog())
+    except (BacklogError, OSError, ValueError):
+        nudge = None
+    if nudge:
+        print(f"{nudge}")
+
+    print(f"run_id    : {log.run_id}\n")
+
+    try:
+        result = agent.run(args.task)
+    finally:
+        log.close()
+
+    print(f"\nfinished  : {result.finished} ({result.reason})")
+    print(f"steps     : {len(result.steps)}")
+    print(f"trace     : {log.path}  (run_id={log.run_id})")
+    return 0 if result.finished else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
