@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated": "2026-10-21",
+  "updated": "2026-10-22",
   "items": [
     {
       "id": "request-capability-escalation",
@@ -109,6 +109,34 @@
       ],
       "resolved_on": "2026-10-22",
       "resolved_commit": "see git log --grep=stall"
+    },
+    {
+      "id": "structural-outline-tool",
+      "title": "Add an AST-based outline tool so the agent reads structure, not lines",
+      "status": "planned",
+      "priority": "medium",
+      "area": "tools",
+      "deferred_on": "2026-10-22",
+      "why": "The agent discovers structure by reading lines and re-reading ranges: 39 read_range calls across 20 runs. Line-based observations carry whitespace, blank lines and indentation that the model does not need in order to decide what to do next. Measured on real files: reading every line as JSON costs 7.6x more characters than an AST outline for a 27-line file, 17.7x for a 173-line file, and 35.4x for a 509-line file. The ratio grows with file size, so the cost is worst exactly where context pressure is highest.",
+      "trigger": "Implement when either (a) a run hits the step cap while exploring rather than acting, or (b) the agent must work in a file over ~400 lines, where line-based reading costs 20x+ more tokens than an outline.",
+      "design": [
+        "Tool `outline(path)` returns a JSON array of {kind, name, line, args, doc_first_line} for module-level functions and classes, via ast.parse -- no source text.",
+        "Keep read_range as the exact-context tool: outline answers 'what is in this file', read_range answers 'what exactly does this block say'. They are different intents.",
+        "find_symbol stays for cross-file lookup, but should prefer AST over regex: the current SYMBOL_PATTERNS misses decorated functions, nested classes, async comprehension targets and multi-line signatures.",
+        "Do NOT replace read_range. The propose-before-mutate handshake requires exact text for old_str, so the agent must still be able to read verbatim content.",
+        "Consider a `services` variant: a tool that runs a script and returns JSON, for derived data (test results, dependency graphs) instead of raw files."
+      ],
+      "touchpoints": [
+        "src/clarapane/tools/read_tools.py",
+        "src/clarapane/profiles.py",
+        "tests/test_read_tools.py"
+      ],
+      "acceptance": [
+        "outline() returns symbols with line numbers for a Python file, with no source text.",
+        "An eval task asking 'what functions does this file define' resolves using outline only, with fewer prompt tokens than the read_range equivalent.",
+        "read_range remains available and is still required for propose_edit's old_str.",
+        "A test asserts outline output size is smaller than full-line JSON for a file over 100 lines."
+      ]
     }
   ]
 }
