@@ -4,6 +4,8 @@
 # Format: <type>(<scope>): <subject>       (max 72 chars, lowercase, no period)
 # Types:  feat fix docs test refactor perf chore build ci
 #
+# Before committing: PYTHONPATH=src .venv/bin/python scripts/audit_defects.py
+#
 # The body is the traceability record. `git log --grep="Decision:"` should answer
 # "why does this commit exist?" without reading the diff.
 

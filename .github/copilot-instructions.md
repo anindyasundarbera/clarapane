@@ -3,6 +3,8 @@
 The authoritative rules for this repository live in [`AGENTS.md`](../AGENTS.md).
 Read it before making changes. Summary of the non-negotiables:
 
+- **Fix blockers first.** Run `PYTHONPATH=src .venv/bin/python scripts/audit_defects.py`
+  before starting new work. A BLOCKER stops all other tasks; deferring one is itself a defect.
 - **Never commit `.env`.** Only `.env.example` with key names, no values.
 - **Commit format:** `<type>(<scope>): <lowercase subject>`, Conventional Commits,
   enforced by `.githooks/commit-msg`. Types: feat fix docs test refactor perf chore build ci.

@@ -71,3 +71,36 @@ def test_agents_md_exists():
     text = (PROJECT_ROOT / "AGENTS.md").read_text()
     for required in ("Never commit `.env`", "Conventional Commits", "Refs:"):
         assert required in text, f"AGENTS.md is missing guidance about {required!r}"
+
+
+def test_defect_audit_has_no_blockers():
+    """The defect policy is only real if it fails the suite.
+
+    Per AGENTS.md section 0: a BLOCKER stops all other work. Running the audit here
+    means a blocking defect cannot be merged, regardless of whether a human or an
+    agent remembers to run it.
+    """
+    sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
+    import audit_defects
+
+    report = audit_defects.check_all()
+    assert not report.blockers, "BLOCKER defects must be fixed before any other work:\n" + "\n".join(
+        f"  {d}" for d in report.blockers
+    )
+
+
+def test_defect_audit_reports_no_defects_at_all():
+    """Stronger guard: the tree should be free of MAJOR defects too."""
+    sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
+    import audit_defects
+
+    report = audit_defects.check_all()
+    assert not report.defects, "\n".join(f"  {d}" for d in report.defects)
+
+
+def test_agents_md_documents_defect_policy():
+    """Future sessions must be able to find the policy without being told."""
+    text = (PROJECT_ROOT / "AGENTS.md").read_text()
+    assert "Defect policy" in text
+    assert "BLOCKER" in text
+    assert "audit_defects.py" in text

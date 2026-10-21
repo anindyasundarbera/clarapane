@@ -6,6 +6,46 @@ committing, before touching secrets, and before skipping a tool gate.
 
 ---
 
+## 0. Defect policy — read this first
+
+**Serious and blocking defects outrank every other task.** Feature work, phase
+progress, and cosmetic polish all stop until they are fixed. This is not advisory.
+
+| Severity | Definition | Required action |
+|---|---|---|
+| **BLOCKER** | The agent can do the wrong thing and report success, or the trace cannot be trusted. | Stop all other work. Fix before proceeding. |
+| **MAJOR** | A capability is unreliable, or a claim cannot be verified from the trace. | Fix before building on top of it. |
+| **MINOR** | Cosmetic or ergonomic. | May defer, with a backlog entry. |
+
+The audit is executable, so "are there blocking bugs?" is a command, not an opinion:
+
+```bash
+PYTHONPATH=src .venv/bin/python scripts/audit_defects.py            # full report
+PYTHONPATH=src .venv/bin/python scripts/audit_defects.py --strict   # exit 1 on any BLOCKER
+```
+
+It is also exercised by the test suite, so a BLOCKER fails tests. Current checks:
+
+- `.env` must not be tracked
+- every run must have exactly one terminal event (`run_start` == `run_end`)
+- no run may report finish with `verified: false`
+- the committed trace must satisfy the declared schema
+- only `EventLog` may write the trace
+- high-priority backlog items must have real acceptance criteria
+- static backstops for the agent invariants in section 6
+
+**Rules:**
+
+1. If you find a BLOCKER, fixing it *is* the task. Do not defer it to a backlog
+   item. Do not "note it and move on". Deferring a blocker is itself a defect.
+2. A bug that is reproducible but whose cause is unknown is a **BLOCKER, not a
+   curiosity**. The stall bug reproduced 3 times in 5 runs, was logged as "medium
+   priority, investigate later", and then blocked the next phase.
+3. Prefer measuring before theorising. Three claims in this project were refuted
+   by measurement (per-turn tool scoping, tool count affecting latency, scoped
+   tools changing agent behaviour). A plausible mechanism is not evidence.
+4. When you fix a behaviour, add the check that would have caught it.
+
 ## 1. Secrets
 
 - **Never commit `.env`.** It is gitignored; keep it that way.
@@ -102,7 +142,12 @@ These are not style preferences; tests depend on them.
    turns within a run — it invalidates the provider prompt cache.
 6. **Least privilege is enforced by construction.** A profile's tool list is the
    only thing the model sees; `select()` raises on unknown tools.
-7. **Path jail on every access.** All paths resolve through `Workspace.resolve()`.
+7. **Never report an unproven success.** A `finish` claim is valid only when
+   either the task was read-only, or a mutating tool was actually called. When
+   mutation was offered but unused, report `finished=False` with
+   `reason="finish_unverified"` even if the model claims success. A confident
+   summary is not evidence.
+8. **Path jail on every access.** All paths resolve through `Workspace.resolve()`.
    The agent may read its own source but never write it.
 
 ## 7. Environment
