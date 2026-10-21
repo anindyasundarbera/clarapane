@@ -20,10 +20,10 @@
         "The grant is logged with actor, profile, and reason, so the trace answers 'why did this run have write access?'."
       ],
       "touchpoints": [
-        "src/glassbox/profiles.py",
-        "src/glassbox/tools/capability_tool.py",
-        "src/glassbox/sdk_agent.py",
-        "src/glassbox/policy.py"
+        "src/clarapane/profiles.py",
+        "src/clarapane/tools/capability_tool.py",
+        "src/clarapane/sdk_agent.py",
+        "src/clarapane/policy.py"
       ],
       "acceptance": [
         "A read_only run asked to fix code can request edit and, once approved, calls propose_edit in the next turn.",
@@ -46,7 +46,7 @@
         "Superseded by fixed capability profiles."
       ],
       "touchpoints": [
-        "src/glassbox/profiles.py"
+        "src/clarapane/profiles.py"
       ],
       "acceptance": []
     },
@@ -66,7 +66,7 @@
       ],
       "touchpoints": [
         "scripts/tool_scope_experiment.py",
-        "src/glassbox/sdk_agent.py"
+        "src/clarapane/sdk_agent.py"
       ],
       "acceptance": [
         "A written cause, or a documented explanation of why the synthetic setup was the cause."

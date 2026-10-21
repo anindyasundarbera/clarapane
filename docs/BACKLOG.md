@@ -3,11 +3,11 @@
 Deferred work lives in [`backlog.json`](../backlog.json) and is managed with a CLI:
 
 ```bash
-PYTHONPATH=src .venv/bin/python -m glassbox.backlog          # everything
-PYTHONPATH=src .venv/bin/python -m glassbox.backlog due      # actionable now
-PYTHONPATH=src .venv/bin/python -m glassbox.backlog show request-capability-escalation
-PYTHONPATH=src .venv/bin/python -m glassbox.backlog start request-capability-escalation
-PYTHONPATH=src .venv/bin/python -m glassbox.backlog done  request-capability-escalation
+PYTHONPATH=src .venv/bin/python -m clarapane.backlog          # everything
+PYTHONPATH=src .venv/bin/python -m clarapane.backlog due      # actionable now
+PYTHONPATH=src .venv/bin/python -m clarapane.backlog show request-capability-escalation
+PYTHONPATH=src .venv/bin/python -m clarapane.backlog start request-capability-escalation
+PYTHONPATH=src .venv/bin/python -m clarapane.backlog done  request-capability-escalation
 ```
 
 ## Why
@@ -28,7 +28,7 @@ Every open item must carry a **trigger** (when to act) and **acceptance** (how y
 
 Two mechanisms keep open items visible:
 
-1. `glassbox.cli` prints a one-line nudge on every run when actionable items exist.
+1. `clarapane.cli` prints a one-line nudge on every run when actionable items exist.
 2. Source files carry a `TODO(<backlog-id>)` comment at the exact hook point, so the note sits where the change belongs rather than only in a list.
 
 ```bash
@@ -47,7 +47,7 @@ grep -rn "TODO(" src/
 
 Profiles are fixed per run. If inference picks `read_only` for a task that needs an edit, the agent gets `unknown tool: propose_edit` and loops; today the only fix is a human re-running with `--profile edit`. The planned `request_capability(profile, reason)` tool makes asking for power an auditable, gated action instead of an invisible widening.
 
-Hook points are marked in [profiles.py](../src/glassbox/profiles.py) (`select()`) and [sdk_agent.py](../src/glassbox/sdk_agent.py) (`_execute`, on the `unknown tool` path). `profiles.can_escalate()` already exists to enforce monotonic widening (`read_only → edit → exec`, never down).
+Hook points are marked in [profiles.py](../src/clarapane/profiles.py) (`select()`) and [sdk_agent.py](../src/clarapane/sdk_agent.py) (`_execute`, on the `unknown tool` path). `profiles.can_escalate()` already exists to enforce monotonic widening (`read_only → edit → exec`, never down).
 
 ### `dynamic-tool-selection` (rejected)
 

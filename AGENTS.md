@@ -1,5 +1,15 @@
 # AGENTS.md — rules for anyone (human or AI) working in this repo
 
+**Project name:** Clarapane (`clarapane`) — a glass-box coding agent.
+The display name is resolved at runtime by `clarapane.identity` and can be
+changed without touching code, via the `CLARAPANE_APP_NAME` environment
+variable or the `--name` CLI flag.
+
+Resolution order: explicit argument, then `CLARAPANE_APP_NAME`, then
+`Clarapane`. The name is read at call time, never at import time. It is
+cosmetic only — it does not alter schema, policy, or behaviour.
+Short commands: `make test`, `make audit`, `make run TASK="..."`, `make clean`.
+
 These rules are binding. They exist because this project's value is not only
 *what* it does but whether its history explains *why*. Read this before
 committing, before touching secrets, and before skipping a tool gate.
@@ -115,8 +125,8 @@ Anything consciously **not** built goes into `backlog.json`, never only into a
 conversation. Use the CLI:
 
 ```bash
-PYTHONPATH=src .venv/bin/python -m glassbox.backlog due
-PYTHONPATH=src .venv/bin/python -m glassbox.backlog add --title "..." --why "..." --area "..."
+PYTHONPATH=src .venv/bin/python -m clarapane.backlog due
+PYTHONPATH=src .venv/bin/python -m clarapane.backlog add --title "..." --why "..." --area "..."
 ```
 
 Every open item needs a `trigger` and `acceptance` criteria or `validate()` rejects it.
@@ -134,7 +144,7 @@ These are not style preferences; tests depend on them.
    separate, gated tool from `propose_edit`.
 2. **Risk lives in the registry, not the prompt.** `ToolSpec.risk` and `.gate`
    decide permission. Never let the model negotiate its own access.
-3. **One log writer.** All events go through `glassbox.events.EventLog`. Nothing
+3. **One log writer.** All events go through `clarapane.events.EventLog`. Nothing
    else opens the trace file.
 4. **Errors are data.** Tool failures return `{"error": ...}` as a tool message
    so the model can recover; they must not crash the loop.
@@ -153,7 +163,7 @@ These are not style preferences; tests depend on them.
 ## 7. Environment
 
 - Python: `uv venv .venv` then `uv pip install --python .venv/bin/python -e .`
-- Run the agent: `PYTHONPATH=src .venv/bin/python -m glassbox.cli "<task>"`
+- Run the agent: `PYTHONPATH=src .venv/bin/python -m clarapane.cli "<task>"`
 - Tests: `PYTHONPATH=src .venv/bin/python -m pytest tests -q`
 - Model pinning: `scripts/list_models.py --set <model>`
 
