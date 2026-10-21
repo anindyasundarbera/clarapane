@@ -70,6 +70,7 @@ class Agent:
         model: str | None = None,
         max_steps: int = 12,
         verbose: bool = True,
+        run_start_fields: dict[str, Any] | None = None,
     ) -> None:
         self.provider = provider
         self.registry = registry
@@ -78,6 +79,8 @@ class Agent:
         self.model = model or provider.default_model
         self.max_steps = max_steps
         self.verbose = verbose
+        # Extra declared fields merged into run_start (e.g. profile, profile_source).
+        self.run_start_fields = run_start_fields or {}
 
     # ------------------------------------------------------------------ public
     def run(self, task: str) -> AgentResult:
@@ -90,6 +93,7 @@ class Agent:
             model=self.model,
             tools=self.registry.names(),
             workspace=str(self.workspace.root),
+            **self.run_start_fields,
         )
 
         for index in range(1, self.max_steps + 1):
@@ -100,6 +104,9 @@ class Agent:
                 # Model replied without acting. Accept only if it used finish;
                 # otherwise this is a stall we should surface, not paper over.
                 self.log.emit("stall", step=index, content=completion.content)
+                # A run must have exactly one terminal event, whatever the exit.
+                # Missing this made 1 of 4 historical runs look unfinished.
+                self.log.emit("run_end", reason="stall", steps=len(steps))
                 return AgentResult(
                     finished=False,
                     summary=None,

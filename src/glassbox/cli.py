@@ -52,17 +52,16 @@ def build_agent(
     scoped = profiles.select(registry, chosen)
 
     log = EventLog(log_path or RUNS_DIR / "runs.jsonl")
-    log.emit(
-        "profile_selected",
-        profile=chosen,
-        source="cli" if profile else "inferred",
-        tools=scoped.names(),
-        description=profiles.DESCRIPTIONS[chosen],
-    )
 
     agent = Agent(
         provider, scoped, workspace, log,
         model=model, max_steps=max_steps, verbose=verbose,
+        # The profile the run was launched under, recorded on run_start so the
+        # trace answers "what was this run allowed to do?" in one record.
+        run_start_fields={
+            "profile": chosen,
+            "profile_source": "cli" if profile else "inferred",
+        },
     )
     return agent, log
 
