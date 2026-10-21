@@ -21,6 +21,10 @@ SUBJECT_RE = re.compile(
 )
 EXEMPT_PREFIXES = ("Merge ", "Revert ", "fixup! ", "squash! ")
 MAX_SUBJECT_LINE = 72
+# GitHub appends " (#N)" to the PR title when squash-merging. That suffix is not
+# authored by us, so a compliant title can cross the limit through no fault of the
+# author. Exempt only the length check, never the format check.
+SQUASH_SUFFIX = re.compile(r" \(#\d+\)$")
 # Anchored to line start so a body sentence mentioning "Refs:" does not satisfy
 # the footer requirement.
 REFS_RE = re.compile(r"^Refs:", re.MULTILINE)
@@ -61,9 +65,11 @@ def check(sha: str, message: str) -> list[str]:
             f"           allowed types: {', '.join(TYPES)}"
         ]
 
-    if len(subject) > MAX_SUBJECT_LINE:
+    suffix = SQUASH_SUFFIX.search(subject)
+    measured = subject[:suffix.start()] if suffix else subject
+    if len(measured) > MAX_SUBJECT_LINE:
         problems.append(
-            f"{sha[:8]}: subject line is {len(subject)} chars (max {MAX_SUBJECT_LINE})"
+            f"{sha[:8]}: subject line is {len(measured)} chars (max {MAX_SUBJECT_LINE})"
         )
 
     detail = match.group("subject")
