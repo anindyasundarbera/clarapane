@@ -101,8 +101,26 @@ class Agent:
             messages.append(self._assistant_message(completion))
 
             if not completion.wants_tools:
-                # Model replied without acting. Accept only if it used finish;
-                # otherwise this is a stall we should surface, not paper over.
+                # The model answered in prose instead of using the protocol. This is
+                # the most common real failure: it did the work, then stopped talking.
+                # Recover by asking it to convert its own answer into a finish() call.
+                recovered = self._recover_finish(messages, completion, index, steps)
+                if recovered is not None:
+                    step, call_id, verified = recovered
+                    steps.append(step)
+                    messages.append(self._assistant_message(completion))
+                    messages.append(self._tool_message(call_id, {"acknowledged": True}))
+                    reason = "finish_recovered" if verified else "finish_unverified"
+                    self.log.emit("run_end", reason=reason, steps=len(steps))
+                    return AgentResult(
+                        finished=verified,
+                        summary=(step.tool_args or {}).get("summary"),
+                        evidence=(step.tool_args or {}).get("evidence"),
+                        steps=steps,
+                        messages=messages,
+                        reason=reason,
+                    )
+
                 self.log.emit("stall", step=index, content=completion.content)
                 # A run must have exactly one terminal event, whatever the exit.
                 # Missing this made 1 of 4 historical runs look unfinished.
@@ -283,6 +301,98 @@ class Agent:
             print(f"  [err  ] {name}: {message}")
         return Step(index=index, tool_name=name, tool_args=None, tool_ok=False,
                     error=message, duration_ms=duration), None
+
+    def _recover_finish(
+        self,
+        messages: list[dict[str, Any]],
+        completion: Completion,
+        index: int,
+        steps: list[Step],
+    ) -> tuple[Step, str, bool] | None:
+        """Convert a prose answer into a protocol `finish` call.
+
+        Why this exists
+        ---------------
+        Measured across six runs: three ended with `finish_reason="stop"` and no
+        tool call. In each case the agent had already read the right file and
+        written a correct answer -- it simply replied in prose instead of calling
+        `finish`. Treating that as a hard failure throws away good work.
+
+        The trap this deliberately avoids
+        ---------------------------------
+        Blindly forcing `finish` would turn an honest stall on an EDIT task into a
+        FALSE SUCCESS: the model would be compelled to claim completion for work
+        it never did. So recovery is only *verified* when the task was read-only.
+        If a mutating tool was offered but never called, the run is reported as
+        `finish_unverified` with finished=False regardless of what the model claims.
+        A confident summary is not evidence.
+
+        Returns (step, tool_call_id, verified) or None when recovery is unavailable.
+        """
+        if "finish" not in self.registry:
+            return None
+
+        # A mutating capability that was offered but never used means the work may
+        # not have been done; never upgrade that to a success.
+        offered_mutation = any(
+            self.registry.get(name).risk in ("write", "exec") for name in self.registry.names()
+        )
+        used_mutation = any(s.tool_name and s.tool_ok and s.tool_name != "finish"
+                            and self._risk_of(s.tool_name) in ("write", "exec")
+                            for s in steps)
+        verified = not offered_mutation or used_mutation
+
+        probe = list(messages)
+        probe.append({"role": "user", "content": (
+            "You replied with prose instead of using a tool. Convert your answer "
+            "into exactly one `finish` call, reusing your own words. Do not invent "
+            "work you did not do."
+        )})
+
+        started = time.perf_counter()
+        try:
+            forced = self.provider.complete(
+                probe,
+                model=self.model,
+                tools=self.registry.schemas(),
+                tool_choice={"type": "function", "function": {"name": "finish"}},
+            )
+        except Exception as exc:  # noqa: BLE001 - recovery is best-effort
+            self.log.emit("recovery_failed", step=index,
+                          error=f"{type(exc).__name__}: {exc}")
+            return None
+
+        call = next((c for c in forced.tool_calls if c.function.name == "finish"), None)
+        if call is None:
+            self.log.emit("recovery_failed", step=index, error="forced finish was not returned")
+            return None
+
+        args, parse_error = self._parse_args(call.function.arguments)
+        if parse_error:
+            self.log.emit("recovery_failed", step=index, error=parse_error)
+            return None
+
+        duration = int((time.perf_counter() - started) * 1000)
+        step = Step(index=index, tool_name="finish", tool_args=args,
+                    tool_ok=True, duration_ms=duration)
+        self.log.emit(
+            "finish",
+            step=index,
+            summary=args.get("summary"),
+            evidence=args.get("evidence"),
+            # Distinguish a model-driven finish from a coerced one; a reader must
+            # be able to tell whether the protocol was followed voluntarily.
+            recovered=True,
+            verified=verified,
+            original_content=completion.content,
+        )
+        return step, call.id, verified
+
+    def _risk_of(self, tool_name: str) -> str:
+        try:
+            return self.registry.get(tool_name).risk
+        except ToolError:
+            return "read"
 
     @staticmethod
     def _parse_args(raw: str | None) -> tuple[dict[str, Any], str | None]:

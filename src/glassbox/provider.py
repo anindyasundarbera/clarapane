@@ -96,15 +96,28 @@ class Provider:
         tools: list[dict[str, Any]] | None = None,
         temperature: float = 0.0,
         max_tokens: int = 4096,
+        tool_choice: str | dict[str, Any] | None = None,
     ) -> Completion:
-        """One chat completion. No retries here -- the graph owns retry policy."""
+        """One chat completion. No retries here -- the graph owns retry policy.
+
+        `tool_choice` is passed through for the recovery path. Verified against
+        Ollama Cloud: the string "required" is silently ignored (the model still
+        answers in prose), but a named function forces the call:
+
+            {"type": "function", "function": {"name": "finish"}}  -> finish called
+        """
+        kwargs: dict[str, Any] = {}
+        if tool_choice is not None and tools:
+            kwargs["tool_choice"] = tool_choice
+
         resp = self._client.chat.completions.create(
             model=model or self.default_model or "",
             messages=messages,
             tools=tools or None,
-            parallel_tool_calls=True if tools else None,
+            parallel_tool_calls=True if tools and tool_choice is None else None,
             temperature=temperature,
             max_tokens=max_tokens,
+            **kwargs,
         )
         choice = resp.choices[0]
         message: ChatCompletionMessage = choice.message

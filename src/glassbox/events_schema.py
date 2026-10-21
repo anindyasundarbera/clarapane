@@ -63,6 +63,17 @@ class Finish(TypedDict, total=False):
     step: Required[int]
     summary: str | None
     evidence: Any
+    # True when the loop coerced a prose answer into this call.
+    recovered: bool
+    # False when mutating capability was offered but never used: the claim is
+    # unproven, and a confident summary is not evidence.
+    verified: bool
+    original_content: str | None
+
+
+class RecoveryFailed(TypedDict, total=False):
+    step: Required[int]
+    error: Required[str]
 
 
 class Stall(TypedDict, total=False):
@@ -100,6 +111,7 @@ SCHEMAS: dict[str, type] = {
     "stall": Stall,
     "run_end": RunEnd,
     "provider_error": ProviderError,
+    "recovery_failed": RecoveryFailed,
     "profile_selected": ProfileSelected,
 }
 

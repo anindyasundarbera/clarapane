@@ -159,3 +159,128 @@ def test_every_step_is_logged_with_a_run_id(agent_factory):
     assert records[-1]["event"] == "run_end"
     assert {r["run_id"] for r in records} == {log.run_id}
     assert [r["seq"] for r in records] == sorted(r["seq"] for r in records)
+
+
+# ---------------------------------------------------------------- stall recovery
+
+
+class SequenceProvider(FakeProvider):
+    """FakeProvider that also honours forced tool_choice, like the real provider."""
+
+    def complete(self, messages, *, model=None, tools=None, tool_choice=None, **kw):
+        return super().complete(messages, model=model, tools=tools, **kw)
+
+
+def test_prose_answer_is_recovered_into_finish(agent_factory):
+    """The common real failure: correct work, wrong protocol. Recover, don't discard."""
+    agent, log = agent_factory([
+        {"content": "add is at calculator/ops.py:9", "finish_reason": "stop"},
+        {"tool_calls": [FakeCall("finish", {"summary": "add at ops.py:9",
+                                           "evidence": "ops.py:9"})]},
+    ])
+    result = agent.run("where is add?")
+
+    assert result.finished is True
+    assert result.reason == "finish_recovered"
+    assert result.summary == "add at ops.py:9"
+    log.close()
+
+
+def test_recovery_is_marked_in_the_trace(agent_factory):
+    """A reader must be able to tell a voluntary finish from a coerced one."""
+    agent, log = agent_factory([
+        {"content": "prose", "finish_reason": "stop"},
+        {"tool_calls": [FakeCall("finish", {"summary": "s", "evidence": "e"})]},
+    ])
+    agent.run("q")
+    log.close()
+
+    records = [json.loads(x) for x in log.path.read_text().splitlines() if x.strip()]
+    finish = next(r for r in records if r["event"] == "finish")
+    assert finish["recovered"] is True
+    assert finish["verified"] is True
+    assert finish["original_content"] == "prose"
+
+
+def test_recovery_refuses_success_when_mutation_was_offered_but_unused(
+    workspace, tmp_path
+):
+    """The safety property: a confident summary is not evidence.
+
+    A read-only task that legitimately finishes must succeed. An EDIT task where
+    the agent never called the mutating tool must NOT be reported as finished,
+    even though the model was coerced into claiming it.
+    """
+    from glassbox.registry import ToolRegistry, ToolSpec
+
+    registry = ToolRegistry()
+    register_read_tools(registry, workspace)
+    register_finish_tool(registry)
+    registry.register(ToolSpec(
+        name="apply_edit", description="apply an edit",
+        parameters={"type": "object", "properties": {}, "required": []},
+        risk="write", gate=True, handler=lambda **kw: {"ok": True},
+    ))
+
+    provider = SequentialProvider([
+        {"content": "I fixed it, trust me", "finish_reason": "stop"},
+        {"tool_calls": [FakeCall("finish", {"summary": "fixed", "evidence": "trust me"})]},
+    ])
+    log = EventLog(tmp_path / "e.jsonl")
+    agent = Agent(provider, registry, workspace, log, max_steps=3, verbose=False)
+
+    result = agent.run("fix the bug")
+    log.close()
+
+    assert result.finished is False, "accepted an unproven success claim"
+    assert result.reason == "finish_unverified"
+    records = [json.loads(x) for x in log.path.read_text().splitlines() if x.strip()]
+    finish = next(r for r in records if r["event"] == "finish")
+    assert finish["verified"] is False
+
+
+def test_recovery_accepts_success_when_mutation_was_actually_used(workspace, tmp_path):
+    """If the agent did call a mutating tool, a recovered finish is legitimate."""
+    from glassbox.registry import ToolRegistry, ToolSpec
+
+    registry = ToolRegistry()
+    register_read_tools(registry, workspace)
+    register_finish_tool(registry)
+    registry.register(ToolSpec(
+        name="apply_edit", description="apply an edit",
+        parameters={"type": "object", "properties": {}, "required": []},
+        risk="write", gate=True, handler=lambda **kw: {"ok": True},
+    ))
+
+    provider = SequentialProvider([
+        {"tool_calls": [FakeCall("apply_edit", {}, "call_edit")]},
+        {"content": "done", "finish_reason": "stop"},
+        {"tool_calls": [FakeCall("finish", {"summary": "fixed", "evidence": "diff"},
+                                 "call_fin")]},
+    ])
+    log = EventLog(tmp_path / "e.jsonl")
+    agent = Agent(provider, registry, workspace, log, max_steps=4, verbose=False)
+
+    result = agent.run("fix the bug")
+    log.close()
+
+    assert result.finished is True
+    assert result.reason == "finish_recovered"
+
+
+def test_recovery_failure_falls_back_to_stall(agent_factory):
+    """If the provider will not coerce, report a stall rather than pretend."""
+    agent, log = agent_factory([
+        {"content": "prose", "finish_reason": "stop"},
+        {"content": "still prose", "finish_reason": "stop"},
+    ])
+    result = agent.run("q")
+
+    assert result.finished is False
+    assert "without calling a tool" in result.reason
+    log.close()
+
+
+class SequentialProvider(FakeProvider):
+    def complete(self, messages, *, model=None, tools=None, tool_choice=None, **kw):
+        return super().complete(messages, model=model, tools=tools, **kw)
