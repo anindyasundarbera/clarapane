@@ -70,6 +70,9 @@
       ],
       "acceptance": [
         "A written cause, or a documented explanation of why the synthetic setup was the cause."
+      ],
+      "notes": [
+        "2026-10-22: superseded by stall-instead-of-finish. The 10/10 re-read behaviour was the same root cause: the model re-reads rather than converting its answer into a protocol finish call. Left open only to re-run the experiment against the fixed loop."
       ]
     },
     {
@@ -90,17 +93,22 @@
     {
       "id": "stall-instead-of-finish",
       "title": "Fix agent stalling instead of calling finish",
-      "status": "planned",
+      "status": "done",
       "priority": "high",
       "area": "agent-loop",
       "deferred_on": "2026-10-21",
-      "why": "3 of 6 runs ended with finish_reason=stop and no tool call, returning finished=False. The agent reads the file then simply stops talking.",
+      "why": "3 of 6 runs ended with finish_reason=stop and no tool call, returning finished=False. The agent reads the file then simply stops talking. ROOT CAUSE: the model answers in prose with finish_reason=stop instead of calling finish(); it had already done the work correctly. FIX: coerce the prose answer into a finish() call via a named tool_choice, and refuse to report success when mutation was offered but never used (finish.verified=false).",
       "trigger": "Phase 3: blocking any multi-step eval",
       "design": [],
       "touchpoints": [],
       "acceptance": [
-        "<define before starting>"
-      ]
+        "A prose answer is converted into a finish() call and the run reports finish_recovered.",
+        "The finish event carries recovered=true and verified=true/false.",
+        "A run where a mutating tool was offered but never called reports finished=False with reason=finish_unverified, even if the model claims success.",
+        "If coercion fails, the run falls back to reason=stall rather than pretending."
+      ],
+      "resolved_on": "2026-10-22",
+      "resolved_commit": "see git log --grep=stall"
     }
   ]
 }
