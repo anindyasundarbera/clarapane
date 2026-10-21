@@ -4,6 +4,10 @@ Every tool call, model response, policy decision and approval flows through this
 one writer. Nothing else in the codebase may open the log file. That restriction
 is what makes the trace trustworthy: if an action happened, it is in here, and
 there is exactly one place that could have written it.
+
+Every write is validated against the declared schema in `events_schema.py`, so an
+undeclared or misspelled field is a hard error at the call site rather than a
+silent shape change in the trace.
 """
 
 from __future__ import annotations
@@ -13,6 +17,8 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+from .events_schema import validate
 
 
 def _now() -> str:
@@ -31,7 +37,12 @@ class EventLog:
         self._fh = self.path.open("a", encoding="utf-8")
 
     def emit(self, event: str, **fields: Any) -> dict[str, Any]:
-        """Record one event. `seq` gives a total order independent of clock skew."""
+        """Record one event. `seq` gives a total order independent of clock skew.
+
+        Raises EventSchemaError (a ValueError) if the payload does not match the
+        declared schema -- before anything is written.
+        """
+        validate(event, fields)
         self.seq += 1
         record: dict[str, Any] = {
             "ts": _now(),
