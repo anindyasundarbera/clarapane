@@ -1,49 +1,57 @@
 {
-  "version": 1,
-  "purpose": "Prepare for an agentic-AI interview by building an agent hands-on. A training artefact, not a product.",
-  "updated": "2026-10-22",
-  "current_step": "langchain",
+  "version": 2,
+  "purpose": "A glass-box coding agent whose every action is proposed, gated, and logged. The claims must be proven by measurement, not asserted by architecture.",
+  "updated": "2026-10-23",
+  "current_step": "execution",
   "steps": [
     {
-      "id": "sdk-agent",
-      "title": "Raw OpenAI SDK agent",
+      "id": "foundation",
+      "title": "Agent foundation: loop, tools, policy, trace",
       "status": "done",
-      "why": "Understand the loop without a framework hiding it: model call, tool dispatch, observation, repeat.",
-      "covered": ["agent loop", "tool calling", "conversation state", "error recovery", "reasoning traces"]
-    },
-    {
-      "id": "ollama-models",
-      "title": "Ollama Cloud models, switchable per run",
-      "status": "done",
-      "why": "Prove the provider boundary is real by switching models without touching agent code.",
-      "covered": ["OpenAI-compatible endpoint", "model listing with capabilities", "runtime model switch"]
-    },
-    {
-      "id": "langchain",
-      "title": "LangChain: the same agent",
-      "status": "in_progress",
-      "why": "See what the framework hides and what it costs. Compare against the SDK version line by line.",
-      "covered": []
-    },
-    {
-      "id": "langgraph",
-      "title": "LangGraph: the same agent as a graph",
-      "status": "pending",
-      "why": "State, conditional edges, and interrupts for human approval -- the interview-relevant payoff.",
-      "covered": []
+      "why": "A working agent whose behaviour is observable and attributable.",
+      "covered": [
+        "agent loop with error-as-data recovery",
+        "atomic read tools with bounded output",
+        "propose/apply split with single-use proposal ids",
+        "approval gate bound to a payload fingerprint and an operator identity",
+        "path jail with separate read and write boundaries",
+        "JSONL trace with a declared, validated schema",
+        "prompt-injection trust boundary"
+      ]
     },
     {
       "id": "evals",
-      "title": "Evaluation and interview rehearsal",
+      "title": "Measure the agent against real tasks",
+      "status": "done",
+      "why": "Every capability so far is asserted, not measured. Until there is a score, 'it works' is an opinion and every extension is a guess.",
+      "covered": [
+        "evals/ harness: 5 cases with deterministic assertions, no LLM judge",
+        "per-case isolated workspaces so order cannot change the score",
+        "pinned model and git sha recorded, so a score is attributable",
+        "negative control proves the suite reports failure, not just success",
+        "baseline: 5/5 on commit b3a9d21 with deepseek-v4.1-flash:cloud"
+      ]
+    },
+    {
+      "id": "execution",
+      "title": "Extend based on what evals reveal",
+      "status": "in_progress",
+      "why": "The expected gap is verification: without run_command the agent cannot prove its edits work. Build only what measurement justifies, not what sounds complete.",
+      "covered": []
+    },
+    {
+      "id": "framework-comparison",
+      "title": "LangChain and LangGraph as measured comparisons",
       "status": "pending",
-      "why": "Prove the agent works and practise explaining the design aloud.",
+      "why": "Compare frameworks against a scored baseline instead of porting for its own sake. The deliverable is evidence about what they hide and what they cost.",
       "covered": []
     }
   ],
   "not_in_plan": [
-    "Additional guardrails or audit checks beyond section 0 of AGENTS.md",
     "Web UI, trace viewer, or dashboard",
     "Multi-agent orchestration",
-    "Deployment, packaging, or publishing"
+    "Deployment, packaging, or publishing to PyPI",
+    "A reviewer agent until the eval step is complete (backlogged)",
+    "Any new guardrail not demanded by a failing eval or a real defect"
   ]
 }

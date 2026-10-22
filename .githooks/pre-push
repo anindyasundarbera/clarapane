@@ -38,4 +38,18 @@ EOF
     fi
   done
 done
+
+# If a PR already exists for this branch, its description must match its contents.
+# A squash merge turns the PR title into main's commit subject, so a stale title
+# permanently misdescribes the change.
+if command -v gh >/dev/null 2>&1; then
+  if python_bin=$([ -x .venv/bin/python ] && echo .venv/bin/python || command -v python3); then
+    if [ -n "$python_bin" ] && ! "$python_bin" scripts/check_pr.py --current >/dev/null 2>&1; then
+      echo "pre-push: the PR for this branch does not describe its contents." >&2
+      "$python_bin" scripts/check_pr.py --current >&2 || true
+      echo "Fix it with: gh pr edit --title ... --body-file ..." >&2
+    fi
+  fi
+fi
+
 exit 0

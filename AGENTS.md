@@ -18,18 +18,21 @@ committing, before touching secrets, and before skipping a tool gate.
 
 ## 0a. Purpose and scope lock — read before proposing work
 
-**This project exists to prepare one person for an agentic-AI interview by building
-an agent hands-on.** It is a training artefact, not a product. Every activity must
-serve that purpose.
+**This project is a glass-box coding agent whose claims must be proven by measurement.**
+It began as interview preparation; the interview is done, and the purpose is now the
+artefact itself: every action proposed, gated, and logged, with the behaviour measured
+rather than asserted.
+
+The governing principle has not changed: **an architectural claim is not evidence.**
+A capability that has never been exercised by an eval is an opinion.
 
 The plan lives in **`plan.json`**, is validated by `scripts/audit_defects.py`
 (`plan-integrity`), and its current step is printed on every CLI run. In order:
 
-1. Raw OpenAI SDK: basic agent loop, tool calling, conversation state
-2. Ollama Cloud models, switchable per run
-3. LangChain: the same agent, to see what the framework hides
-4. LangGraph: the same agent as a graph, for state and interrupts
-5. Evaluation and interview rehearsal
+1. Foundation: loop, tools, policy, trace (done)
+2. **Evals: measure the agent against real tasks** (current)
+3. Extend: build only what a failing eval justifies
+4. Comparisons: LangChain and LangGraph against a scored baseline
 
 **Deviation is a defect.** It is logged with the same severity vocabulary as section 0.
 
@@ -235,6 +238,34 @@ would repeat the overclaim this section was written to correct.
 
 Deliberate override for an emergency, visible to the audit afterwards:
 `ALLOW_PROTECTED_COMMIT=1` / `ALLOW_PROTECTED_PUSH=1`.
+
+## 1d. A pull request must describe what it contains
+
+A squash merge uses the **PR title** as `main`'s commit subject. If the title names one
+of several commits, main records the whole change under a subject that describes a part
+of it — the same traceability failure as a commit whose body does not match its diff,
+one layer up.
+
+Real instance: PR #4 was titled `fix(profiles): remove the exec profile…` while holding
+`docs(plan)`, `docs(backlog)` and `feat(evals)`. Merging it would have recorded a
+feature under a fix subject, hiding new capability from anyone reading history.
+
+Rules, enforced by `scripts/check_pr.py`:
+
+- The title follows Conventional Commits, like a commit subject.
+- The title names the **most significant** change present. Significance order:
+  `feat > fix > refactor > perf > test > docs > chore/build/ci`. A PR containing a
+  `feat` may not be titled `fix`.
+- The body is at least 200 characters, because the squash commit inherits it as the
+  permanent record.
+- A multi-commit PR body ends with a `Refs:` footer.
+
+```bash
+python scripts/check_pr.py 4          # a specific PR
+python scripts/check_pr.py --current  # the current branch's PR
+```
+
+If a PR genuinely spans two unrelated types, split it rather than weakening the title.
 
 ## 2. Commit messages
 

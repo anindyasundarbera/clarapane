@@ -455,3 +455,84 @@ def test_current_plan_step_survives_malformed_plan(tmp_path, monkeypatch):
     plan_file.write_text(_json.dumps({"steps": [{"id": "x", "status": "in_progress",
                                                  "title": "X"}]}))
     assert cli.current_plan_step() == "X"
+
+
+# --------------------------------------------------- eval suite is specified
+
+
+def test_eval_suite_backlog_item_is_actionable():
+    """A high-priority item must be executable by a future session without rethinking.
+
+    Checks the fields that make a plan actionable rather than aspirational: a concrete
+    trigger, per-case assertions, and acceptance criteria that could fail.
+    """
+    from clarapane import backlog
+
+    item = backlog.find(backlog.load(), "eval-suite")
+    assert item["status"] in ("planned", "in_progress")
+    assert item["trigger"], "needs a trigger"
+    assert len(item.get("cases", [])) >= 6, "too few cases to measure anything"
+    assert item.get("runner_design"), "needs a runner design"
+    assert item.get("non_goals"), "needs explicit non-goals to prevent scope creep"
+
+    for case in item["cases"]:
+        assert case.get("name") and case.get("assert"), f"case lacks assertions: {case}"
+        assert len(case["assert"]) >= 2, f"case {case['name']!r} asserts too little"
+
+    # The suite must be able to fail, not just confirm successes.
+    expected_failures = [c for c in item["cases"] if "EXPECTED TO FAIL" in c.get("status", "")]
+    assert expected_failures, "no case is expected to fail: the suite could be vacuous"
+    for case in expected_failures:
+        assert case.get("expected_failure_reason"), (
+            f"{case['name']!r} must say why it fails, or it becomes a silent known-bug"
+        )
+
+
+# -------------------------------------------- PR description integrity (rule 1d)
+
+
+def test_pr_title_must_reflect_its_most_significant_commit():
+    """A squash merge uses the PR title as main's commit subject.
+
+    Regression guard for a real gap: PR #4 was titled `fix(profiles)` while containing
+    `docs(plan)`, `docs(backlog)` and `feat(evals)`. Merging it would have recorded a
+    feature under a fix subject, hiding new capability from anyone reading history.
+    """
+    sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
+    import check_pr
+
+    commits = [
+        {"messageHeadline": "fix(profiles): remove the exec profile"},
+        {"messageHeadline": "docs(plan): repurpose the project"},
+        {"messageHeadline": "feat(evals): measure the agent"},
+    ]
+    body = "x" * 300 + "\nRefs: phase:4.0"
+
+    import json as _json
+
+    original = check_pr.gh
+
+    def fake(title):
+        def _gh(*args):
+            return _json.dumps({
+                "number": 4, "title": title, "body": body, "commits": commits,
+                "headRefName": "feat/x", "baseRefName": "main",
+            })
+        return _gh
+
+    try:
+        check_pr.gh = fake("fix(profiles): remove the exec profile")
+        problems = check_pr.check_pr(4)
+        assert problems, "stale title was accepted"
+        assert any("feat" in p for p in problems), f"problem did not name the feat: {problems}"
+
+        check_pr.gh = fake("feat(evals): measure the agent")
+        assert not check_pr.check_pr(4), "correct title was rejected"
+    finally:
+        check_pr.gh = original
+
+
+def test_check_pr_script_exists_and_is_documented():
+    assert (PROJECT_ROOT / "scripts" / "check_pr.py").exists()
+    text = (PROJECT_ROOT / "AGENTS.md").read_text()
+    assert "check_pr.py" in text, "AGENTS.md does not mention the PR check"

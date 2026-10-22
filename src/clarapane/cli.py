@@ -103,7 +103,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--workspace", default=str(DEFAULT_WORKSPACE),
                     help="Workspace root the agent is jailed to")
     ap.add_argument("--max-steps", type=int, default=12)
-    ap.add_argument("--profile", choices=["read_only", "edit", "exec"],
+    ap.add_argument("--profile", choices=list(profiles.PROFILES),
                     help="Capability profile. Defaults to inference from the task.")
     ap.add_argument("--operator", default=None,
                     help="Accountable human for approvals (default: $CLARAPANE_OPERATOR_ID or OS login)")
@@ -116,7 +116,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.yes:
         chosen_gate = PolicyGate(allow_writes=True, reason="--yes")
-    elif args.profile in ("edit", "exec"):
+    elif args.profile == "edit":
         chosen_gate = InteractiveGate(operator=args.operator)
     else:
         chosen_gate = PolicyGate(allow_writes=False, reason="read-only profile")
