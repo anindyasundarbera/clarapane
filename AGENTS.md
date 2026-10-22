@@ -239,6 +239,34 @@ would repeat the overclaim this section was written to correct.
 Deliberate override for an emergency, visible to the audit afterwards:
 `ALLOW_PROTECTED_COMMIT=1` / `ALLOW_PROTECTED_PUSH=1`.
 
+## 1d. A pull request must describe what it contains
+
+A squash merge uses the **PR title** as `main`'s commit subject. If the title names one
+of several commits, main records the whole change under a subject that describes a part
+of it — the same traceability failure as a commit whose body does not match its diff,
+one layer up.
+
+Real instance: PR #4 was titled `fix(profiles): remove the exec profile…` while holding
+`docs(plan)`, `docs(backlog)` and `feat(evals)`. Merging it would have recorded a
+feature under a fix subject, hiding new capability from anyone reading history.
+
+Rules, enforced by `scripts/check_pr.py`:
+
+- The title follows Conventional Commits, like a commit subject.
+- The title names the **most significant** change present. Significance order:
+  `feat > fix > refactor > perf > test > docs > chore/build/ci`. A PR containing a
+  `feat` may not be titled `fix`.
+- The body is at least 200 characters, because the squash commit inherits it as the
+  permanent record.
+- A multi-commit PR body ends with a `Refs:` footer.
+
+```bash
+python scripts/check_pr.py 4          # a specific PR
+python scripts/check_pr.py --current  # the current branch's PR
+```
+
+If a PR genuinely spans two unrelated types, split it rather than weakening the title.
+
 ## 2. Commit messages
 
 Format: **Conventional Commits**, enforced by `.githooks/commit-msg`.

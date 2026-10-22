@@ -486,3 +486,53 @@ def test_eval_suite_backlog_item_is_actionable():
         assert case.get("expected_failure_reason"), (
             f"{case['name']!r} must say why it fails, or it becomes a silent known-bug"
         )
+
+
+# -------------------------------------------- PR description integrity (rule 1d)
+
+
+def test_pr_title_must_reflect_its_most_significant_commit():
+    """A squash merge uses the PR title as main's commit subject.
+
+    Regression guard for a real gap: PR #4 was titled `fix(profiles)` while containing
+    `docs(plan)`, `docs(backlog)` and `feat(evals)`. Merging it would have recorded a
+    feature under a fix subject, hiding new capability from anyone reading history.
+    """
+    sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
+    import check_pr
+
+    commits = [
+        {"messageHeadline": "fix(profiles): remove the exec profile"},
+        {"messageHeadline": "docs(plan): repurpose the project"},
+        {"messageHeadline": "feat(evals): measure the agent"},
+    ]
+    body = "x" * 300 + "\nRefs: phase:4.0"
+
+    import json as _json
+
+    original = check_pr.gh
+
+    def fake(title):
+        def _gh(*args):
+            return _json.dumps({
+                "number": 4, "title": title, "body": body, "commits": commits,
+                "headRefName": "feat/x", "baseRefName": "main",
+            })
+        return _gh
+
+    try:
+        check_pr.gh = fake("fix(profiles): remove the exec profile")
+        problems = check_pr.check_pr(4)
+        assert problems, "stale title was accepted"
+        assert any("feat" in p for p in problems), f"problem did not name the feat: {problems}"
+
+        check_pr.gh = fake("feat(evals): measure the agent")
+        assert not check_pr.check_pr(4), "correct title was rejected"
+    finally:
+        check_pr.gh = original
+
+
+def test_check_pr_script_exists_and_is_documented():
+    assert (PROJECT_ROOT / "scripts" / "check_pr.py").exists()
+    text = (PROJECT_ROOT / "AGENTS.md").read_text()
+    assert "check_pr.py" in text, "AGENTS.md does not mention the PR check"
