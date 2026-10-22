@@ -27,8 +27,9 @@ Push the feature branch and open a pull request instead:
   git push -u origin \$(git symbolic-ref --short HEAD)
   gh pr create --fill
 
-Main is protected by a GitHub ruleset; a direct push would be rejected there too,
-so this hook only saves you the round trip.
+Main is protected by a GitHub ruleset, so a direct push is rejected there too and
+this hook only saves the round trip. Neither the ruleset nor this hook guarantees
+that a second person reviewed the change -- see AGENTS.md 1c.
 
 Deliberate override (will be reported by scripts/audit_defects.py):
   ALLOW_PROTECTED_PUSH=1 git push ...

@@ -41,7 +41,14 @@ def current_plan_step() -> str | None:
         data = _json.loads((PROJECT_ROOT / "plan.json").read_text())
     except (OSError, ValueError):
         return None
+    # Valid JSON is not necessarily the shape we expect: [] / null / "x" / 42 all
+    # parse and then raise AttributeError on .get(). A corrupt plan must degrade to
+    # "no step shown", never crash a run.
+    if not isinstance(data, dict):
+        return None
     for step in data.get("steps", []):
+        if not isinstance(step, dict):
+            continue
         if step.get("status") == "in_progress":
             return step.get("title", step.get("id"))
     return None

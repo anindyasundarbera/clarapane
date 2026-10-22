@@ -46,7 +46,7 @@ FIX_CUTOFFS: dict[str, str] = {
     "one-finish-per-run": "2026-10-22T00:45:00+05:30",
     # approvals must name an operator and bind to a payload fingerprint
     "approval-binding": "2026-10-22T01:00:00+05:30",
-    # every commit on main must arrive through a reviewed pull request
+    # every commit on main must arrive through a pull request (existence, not review)
     "no-direct-main-commits": "2026-10-22T00:40:00+05:30",
 }
 
@@ -388,8 +388,12 @@ def check_no_direct_main_commits(report: Report) -> None:
     bypassed (--no-verify, another clone, an admin override). This is the detective
     control: it reports what actually happened rather than what was supposed to.
 
-    A commit counts as reviewed when its message carries a PR reference in the Refs:
-    footer, which `gh pr merge --squash` produces.
+    A commit counts as having gone through a PR when its message carries a PR
+    reference in the Refs: footer, which `gh pr merge --squash` produces.
+
+    This verifies that a PR EXISTED. It does not verify that anyone reviewed it --
+    the repository has one collaborator and the ruleset requires zero approvals.
+    Naming it "unreviewed" would overstate what the check knows.
     """
     import re
     import subprocess

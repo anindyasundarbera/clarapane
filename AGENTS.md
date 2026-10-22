@@ -182,6 +182,27 @@ operator read or understood it.
 `main` is protected by a GitHub ruleset (id 25580492, `enforcement: active`,
 `current_user_can_bypass: never`). Every change reaches it through a pull request.
 
+**What this does and does not guarantee.** Be precise, because the difference matters:
+
+| Enforced | Not enforced |
+|---|---|
+| Direct pushes to main are rejected server-side | That a *second* person read the change |
+| Every change is recorded as a PR with a diff | That the change was understood by anyone |
+| Force-push and deletion are blocked | That review happened at all |
+
+The ruleset is configured with `required_approving_review_count: 0` because this
+repository currently has exactly one collaborator. A PR therefore guarantees **an
+auditable record**, not **independent review**. Do not describe it as "reviewed".
+
+**Self-review is not review**, and it is not accepted as a substitute. If the author
+is the only reviewer, governance has already failed: the check exists to catch what the
+author cannot see, and the author cannot supply that. A self-approval recorded as a
+passing gate would be worse than no gate, because it manufactures evidence of scrutiny
+that never occurred -- the same defect as accepting "proceed" as consent.
+
+Independent review requires either a second human collaborator or an automated reviewer
+whose findings are treated as blocking. Neither exists yet; see `backlog.json`.
+
 This was a real violation: 28 commits landed directly on `main`, and one was pushed.
 The ruleset now makes that impossible server-side, regardless of local configuration.
 
@@ -208,8 +229,9 @@ gh pr create --fill
 gh pr merge --squash --delete-branch
 ```
 
-A squash merge records the PR number in the commit, which is what the audit looks
-for as evidence of review.
+A squash merge records the PR number in the commit. The audit treats that number as
+evidence that a **PR existed**, not that it was reviewed. Calling it evidence of review
+would repeat the overclaim this section was written to correct.
 
 Deliberate override for an emergency, visible to the audit afterwards:
 `ALLOW_PROTECTED_COMMIT=1` / `ALLOW_PROTECTED_PUSH=1`.
