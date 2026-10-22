@@ -40,11 +40,10 @@ from __future__ import annotations
 import re
 from typing import Literal
 
-# A profile may only name tools that are actually registered. `exec` is declared
-# below but commented out because run_command / git_checkpoint / git_rollback do not
-# exist yet: advertising it made `--profile exec` raise ValueError at startup, and no
-# test caught it because every test built only the read/edit registries.
-ProfileName = Literal["read_only", "edit"]
+# A profile may only name tools that are actually registered. `exec` was removed once
+# when its tools did not exist (it raised ValueError at startup); it is restored here
+# now that run_command, git_checkpoint and git_rollback are real and tested.
+ProfileName = Literal["read_only", "edit", "exec"]
 
 # Ordered from least to most capability. Each entry names a tool that must be
 # registered; `select` fails loudly if a profile references an unknown tool.
@@ -54,19 +53,16 @@ PROFILES: dict[ProfileName, tuple[str, ...]] = {
         "list_dir", "grep", "read_range", "find_symbol",
         "propose_edit", "apply_edit", "write_file", "finish",
     ),
-    # "exec" belongs here once run_command, git_checkpoint and git_rollback are
-    # registered. Adding a profile before its tools exist makes the profile
-    # unusable, not aspirational:
-    #   "exec": (
-    #       "list_dir", "grep", "read_range", "find_symbol",
-    #       "propose_edit", "apply_edit", "write_file",
-    #       "run_command", "git_checkpoint", "git_rollback", "finish",
-    #   ),
+    "exec": (
+        "list_dir", "grep", "read_range", "find_symbol",
+        "propose_edit", "apply_edit", "write_file",
+        "run_command", "git_checkpoint", "git_rollback", "finish",
+    ),
 }
 
 # Ordered from least to most capable. Used by the planned escalation tool to
 # enforce monotonic widening: a run may ask for more, never for less.
-ESCALATION_ORDER: tuple[ProfileName, ...] = ("read_only", "edit")
+ESCALATION_ORDER: tuple[ProfileName, ...] = ("read_only", "edit", "exec")
 
 
 def can_escalate(current: ProfileName, target: ProfileName) -> bool:
@@ -76,6 +72,7 @@ def can_escalate(current: ProfileName, target: ProfileName) -> bool:
 DESCRIPTIONS: dict[ProfileName, str] = {
     "read_only": "Inspect and answer. No mutations, no command execution.",
     "edit": "Read and edit files. No command execution.",
+    "exec": "Full capability: read, edit, run allowlisted commands, checkpoint and roll back.",
     # "exec": "Full capability: read, edit, run commands, checkpoint and roll back.",
 }
 

@@ -40,8 +40,10 @@ commit:
 	MSG_EOF
 
 # Live eval run. Not part of `make test`: it needs network and a model.
+# Traces are kept per case so a failure cites its own evidence instead of a
+# temp directory that disappears with the run.
 eval:
-	$(PY) -m evals.runner --json evals/latest.json
+	$(PY) -m evals.runner --json evals/latest.json --trace-dir eval-traces
 
 clean:
 	find . -name '__pycache__' -not -path './.venv/*' -type d -exec rm -rf {} + 2>/dev/null || true

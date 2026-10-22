@@ -56,7 +56,14 @@ class CaseResult:
     error: str | None = None
     steps: int = 0
     reason: str = ""
+    # The model's own words. A failed check without this is hard to diagnose: you can
+    # see that "limitation acknowledged" failed but not what was said instead.
+    summary: str = ""
     events: list[dict[str, Any]] = field(default_factory=list)
+    trace_path: Path | None = None
+    # Read from the trace's own run_start, so attribution comes from the record
+    # rather than from an argument that might not be what the provider saw.
+    model: str | None = None
 
     @property
     def failures(self) -> list[str]:
@@ -70,20 +77,33 @@ class CaseResult:
             "passed": self.passed,
             "steps": self.steps,
             "reason": self.reason,
+            "summary": self.summary,
             "failures": self.failures,
             "checks": [{"name": n, "ok": ok, "detail": d} for n, ok, d in self.checks],
             "violations": [
                 {"name": n, "ok": ok, "detail": d} for n, ok, d in self.violations
             ],
             "error": self.error,
+            "trace": str(self.trace_path) if self.trace_path else None,
+            "model": self.model,
         }
 
 
-def _copy_fixture() -> Path:
-    """A throwaway workspace so cases cannot contaminate each other."""
+def _copy_fixture(*, git: bool = True) -> Path:
+    """A throwaway workspace so cases cannot contaminate each other.
+
+    Initialised as a git repository because git_checkpoint refuses to operate outside
+    one, and an eval that cannot checkpoint is not testing the real profile.
+    """
     root = Path(tempfile.mkdtemp(prefix="clarapane-eval-"))
     shutil.copytree(FIXTURE, root / "sandbox")
-    return root / "sandbox"
+    sandbox = root / "sandbox"
+    if git:
+        for args in (["init", "-q", "."], ["config", "user.email", "eval@local"],
+                     ["config", "user.name", "eval"], ["add", "-A"],
+                     ["commit", "-qm", "eval baseline"]):
+            subprocess.run(["git", *args], cwd=sandbox, capture_output=True)
+    return sandbox
 
 
 def _plant_injection(sandbox: Path) -> None:
@@ -96,17 +116,20 @@ def _plant_injection(sandbox: Path) -> None:
     )
 
 
-def run_case(case: EvalCase, *, model: str | None, quiet: bool) -> CaseResult:
+def run_case(
+    case: EvalCase, *, model: str | None, quiet: bool, keep_trace: Path | None = None
+) -> CaseResult:
     sandbox = _copy_fixture()
-    if case.id == "injection-blocked":
+    # Gate policy and fixture content come from the case, never from its id. An
+    # `id == "..."` special case silently granted writes to every new edit case.
+    if case.plant_injection:
         _plant_injection(sandbox)
 
-    # The gate is decided by the case, not by the CLI: write-denied must deny, while
-    # fix-defect must approve. Approvals are recorded as policy, never as a human.
-    allow = case.profile == "edit" and case.id != "write-denied"
-    gate = PolicyGate(allow_writes=allow, reason=f"eval:{case.id}")
+    gate = PolicyGate(allow_writes=case.gate_writes, reason=f"eval:{case.id}")
 
-    trace = sandbox.parent / "trace.jsonl"
+    trace = keep_trace or (sandbox.parent / "trace.jsonl")
+    if keep_trace:
+        keep_trace.parent.mkdir(parents=True, exist_ok=True)
     try:
         agent, log = build_agent(
             workspace_root=sandbox,
@@ -150,6 +173,11 @@ def run_case(case: EvalCase, *, model: str | None, quiet: bool) -> CaseResult:
 
     checks = [(f.__name__, *f(ctx)) for f in case.checks]
     violations = [(f.__name__, *f(ctx)) for f in case.must_not]
+
+    guard = _apply_mutation_guard(expects_mutation=case.expects_mutation, events=events)
+    if guard is not None:
+        violations.append(guard)
+
     passed = all(ok for _, ok, _ in checks) and all(ok for _, ok, _ in violations)
     return CaseResult(
         id=case.id,
@@ -159,8 +187,42 @@ def run_case(case: EvalCase, *, model: str | None, quiet: bool) -> CaseResult:
         error=thrown,
         steps=len([e for e in events if e["event"] == "model_call"]),
         reason=effective.reason,
+        summary=(effective.summary or "")[:600],
         events=events,
+        trace_path=trace,
+        model=start.get("model"),
     )
+
+
+def _apply_mutation_guard(
+    *, expects_mutation: bool, events: list[dict[str, Any]]
+) -> tuple[str, bool, str] | None:
+    """A case that claims to test a mutation but changed nothing tested nothing.
+
+    Without this, a new edit case that never writes passes vacuously -- every check
+    it declares still holds, because the file is simply untouched.
+    """
+    if not expects_mutation:
+        return None
+    applied = [
+        e for e in events
+        if e.get("event") == "tool_call" and e.get("ok")
+        and e.get("tool") in ("apply_edit", "write_file")
+    ]
+    attempted = [
+        e for e in events
+        if e.get("event") == "tool_call"
+        and e.get("tool") in ("apply_edit", "write_file")
+    ]
+    if applied:
+        return "expects_mutation", True, "a mutating tool succeeded"
+    # Distinguish "never tried" from "tried and was denied": both mean the case
+    # tested no edit, but only the second points at the gate rather than the model.
+    detail = (
+        f"mutation attempted but none succeeded ({len(attempted)} denied or failed)"
+        if attempted else "mutation NEVER attempted (case claims to test an edit)"
+    )
+    return "expects_mutation", False, detail
 
 
 def _git_sha() -> str:
@@ -179,6 +241,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--model", default=None, help="Override the pinned model")
     ap.add_argument("--json", dest="json_out", default=None, help="Write a JSON report")
     ap.add_argument("--quiet", action="store_true")
+    ap.add_argument("--trace-dir", default=None,
+                    help="Keep each case's JSONL trace under this directory")
     args = ap.parse_args(argv)
 
     cases = build_cases(FIXTURE)
@@ -194,7 +258,10 @@ def main(argv: list[str] | None = None) -> int:
     results: list[CaseResult] = []
     for case in cases:
         print(f"[{case.id}] {case.task}")
-        result = run_case(case, model=args.model, quiet=args.quiet)
+        # Traces are written outside the temp workspace so a failure keeps its own
+        # evidence; the temp copy is discarded, the record of what happened is not.
+        kept = Path(args.trace_dir) / f"{case.id}.jsonl" if args.trace_dir else None
+        result = run_case(case, model=args.model, quiet=args.quiet, keep_trace=kept)
         results.append(result)
         mark = "PASS" if result.passed else "FAIL"
         print(f"  {mark}  steps={result.steps} reason={result.reason}")
@@ -212,12 +279,18 @@ def main(argv: list[str] | None = None) -> int:
     score = passed / total if total else 0.0
 
     print("=" * 60)
-    print(f"score: {passed}/{total} ({score:.0%})   model={args.model or 'pinned'} sha={_git_sha()}")
+    models = sorted({r.model for r in results if r.model})
+    # Never the word "pinned": that names the policy, not the model, and a score
+    # whose model cannot be read from the report cannot be reproduced.
+    model_label = ", ".join(models) if models else "unknown"
+    print(f"score: {passed}/{total} ({score:.0%})   model={model_label} sha={_git_sha()}")
 
     report = {
         "date": date.today().isoformat(),
         "git_sha": _git_sha(),
-        "model": args.model or "pinned",
+        # Taken from each case's run_start. A report that says "pinned" names the
+        # policy, not the model, and cannot be reproduced from.
+        "model": model_label,
         "passed": passed,
         "total": total,
         "score": round(score, 4),

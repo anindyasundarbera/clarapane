@@ -308,6 +308,41 @@
         "Runs are hermetic: no case mutates the committed sandbox, and cases can run in any order.",
         "Total runtime under two minutes against a live model."
       ]
+    },
+    {
+      "id": "aop-coordination-research",
+      "title": "Research whether a shared intent ledger measurably helps concurrent agents",
+      "status": "planned",
+      "priority": "medium",
+      "area": "research",
+      "deferred_on": "2026-10-23",
+      "why": "The agent can see files but not other agents' declared intent or observed effect over the same paths. That gap is real but unmeasured: the eval harness scores 5/5 and every case is single-agent, and the committed trace contains zero coordination conflicts in 113 tool calls. Building a protocol before producing a failure it prevents would violate plan.json's rule that only measurement justifies capability.",
+      "trigger": "Start when the user approves the research phase; run E3 (intent fidelity) before E2 (concurrency). Blocks on the mandate gate in the research plan.",
+      "design": [
+        "Two namespaces, never merged: `declared` (agent-authored, untrusted) and `observed` (harness-authored, derived from real events). A consumer may act only on their intersection.",
+        "Ledger lives outside every checkout, at <git-common-dir>/aop/, because sibling worktrees share the common dir but not runs/ (probed).",
+        "Hash-bound optimism, no locking: reuse Proposal.before_hash + verify_unchanged instead of adding a lock manager.",
+        "One read tool, bounded output, added at run start and never mid-run, because capability profiles are fixed per run for provider cache reasons.",
+        "Reasoning traces are NOT published by default. A shared ledger is tool output for the next agent, so it is a new injection channel with higher implied trust.",
+        "E0 extends evals/runner.py: real git fixture (the copied sandbox has no .git, so worktree add fails), a multi-agent scenario runner, and set-level concurrency assertions.",
+        "E3 (intent fidelity) runs before E1/E2: it is cheapest and can invalidate the declared namespace on its own."
+      ],
+      "touchpoints": [
+        "evals/runner.py",
+        "evals/cases.py",
+        "src/clarapane/events_schema.py",
+        "docs/research/"
+      ],
+      "acceptance": [
+        "A concurrency fixture exists that FAILS on HEAD with no ledger; the failing run is recorded as the mandate.",
+        "E3 reports declared-vs-observed agreement; >20% contradicted means the declared namespace ships disabled.",
+        "E2 compares control vs ledger arms with matched model, sha, and step cap, and both reports name the model that actually ran.",
+        "Every new eval case declares gate_writes and plant_injection rather than relying on case.id.",
+        "If the fixture cannot produce a conflict, the item is closed as 'not mandated' with that evidence rather than reopened."
+      ],
+      "notes": [
+        "2026-10-23: deferred pending explicit user approval of the research phase; see the research plan for the full gap register."
+      ]
     }
   ]
 }
