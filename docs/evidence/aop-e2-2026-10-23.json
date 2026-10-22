@@ -1,0 +1,750 @@
+{
+  "experiment": "E2",
+  "rule": "keep if stale rejections fall AND duplicate edits drop >=50% AND step mean does not increase by more than 1",
+  "amendment": "correctness/conflict prevention is NOT a criterion: the CAS guard already prevents lost updates (FINDINGS-PREBUILD P2)",
+  "model": "pinned",
+  "max_steps": 10,
+  "repeat": 3,
+  "tasks": [
+    "add-bug",
+    "div-bug",
+    "mod-bug",
+    "add-bug-2"
+  ],
+  "summary": {
+    "control": {
+      "rounds": 3,
+      "stale_rejections": {
+        "mean": 1.67,
+        "min": 1,
+        "max": 2,
+        "total": 5
+      },
+      "duplicate_region_edits": {
+        "mean": 0,
+        "min": 0,
+        "max": 0,
+        "total": 0
+      },
+      "total_steps": {
+        "mean": 41.67,
+        "min": 28,
+        "max": 66,
+        "total": 125
+      },
+      "files_changed": {
+        "mean": 1,
+        "min": 1,
+        "max": 1,
+        "total": 3
+      },
+      "prompt_tokens": {
+        "mean": 139170,
+        "min": 86731,
+        "max": 226433,
+        "total": 417510
+      },
+      "agents_finished": 9,
+      "agents_total": 12
+    },
+    "ledger": {
+      "rounds": 3,
+      "stale_rejections": {
+        "mean": 2.67,
+        "min": 1,
+        "max": 5,
+        "total": 8
+      },
+      "duplicate_region_edits": {
+        "mean": 0,
+        "min": 0,
+        "max": 0,
+        "total": 0
+      },
+      "total_steps": {
+        "mean": 32.33,
+        "min": 30,
+        "max": 35,
+        "total": 97
+      },
+      "files_changed": {
+        "mean": 1,
+        "min": 1,
+        "max": 1,
+        "total": 3
+      },
+      "prompt_tokens": {
+        "mean": 108725,
+        "min": 99653,
+        "max": 121773,
+        "total": 326175
+      },
+      "agents_finished": 8,
+      "agents_total": 12
+    }
+  },
+  "decision": {
+    "stale_ok": false,
+    "dup_ok": true,
+    "steps_ok": true,
+    "kept": false,
+    "step_delta": -9.34
+  },
+  "rounds": {
+    "control": [
+      {
+        "name": "e2-control-1",
+        "arm": "control",
+        "duration_s": 26.26,
+        "total_steps": 66,
+        "stale_rejections": 2,
+        "duplicate_region_edits": 0,
+        "files_changed": 1,
+        "prompt_tokens": 226433,
+        "agents": [
+          {
+            "agent_id": "add-bug",
+            "job_id": "job-add-bug",
+            "task": "Fix the negative-number clamping bug in the `add` function in calc/ops.py. Only change `add`.",
+            "steps": 15,
+            "finished": true,
+            "verified": true,
+            "stale_rejections": 0,
+            "apply_failures": 0,
+            "failed_calls": 0,
+            "tools": [
+              "list_dir",
+              "find_symbol",
+              "read_range",
+              "read_range",
+              "propose_edit",
+              "apply_edit",
+              "read_range",
+              "read_range",
+              "list_dir",
+              "find_symbol",
+              "read_range",
+              "read_range",
+              "propose_edit",
+              "apply_edit",
+              "read_range",
+              "read_range",
+              "read_range"
+            ],
+            "error": null
+          },
+          {
+            "agent_id": "div-bug",
+            "job_id": "job-div-bug",
+            "task": "Fix the missing division-by-zero guard in the `div` function in calc/ops.py. Only change `div`.",
+            "steps": 16,
+            "finished": true,
+            "verified": true,
+            "stale_rejections": 0,
+            "apply_failures": 0,
+            "failed_calls": 0,
+            "tools": [
+              "list_dir",
+              "find_symbol",
+              "read_range",
+              "read_range",
+              "propose_edit",
+              "apply_edit",
+              "read_range",
+              "read_range",
+              "grep",
+              "read_range",
+              "list_dir",
+              "find_symbol",
+              "read_range",
+              "read_range",
+              "propose_edit",
+              "apply_edit",
+              "read_range",
+              "read_range"
+            ],
+            "error": null
+          },
+          {
+            "agent_id": "mod-bug",
+            "job_id": "job-mod-bug",
+            "task": "Fix the wrong operator in the `mod` function in calc/ops.py. Only change `mod`.",
+            "steps": 17,
+            "finished": true,
+            "verified": true,
+            "stale_rejections": 1,
+            "apply_failures": 1,
+            "failed_calls": 1,
+            "tools": [
+              "read_range",
+              "list_dir",
+              "read_range",
+              "propose_edit",
+              "apply_edit",
+              "read_range",
+              "read_range",
+              "read_range",
+              "read_range",
+              "propose_edit",
+              "apply_edit",
+              "read_range",
+              "propose_edit",
+              "apply_edit",
+              "read_range"
+            ],
+            "error": null
+          },
+          {
+            "agent_id": "add-bug-2",
+            "job_id": "job-add-bug-2",
+            "task": "Fix the negative-number clamping bug in the `add` function in calc/ops.py, and also correct the stale docstring that describes the bug. Only change `add`.",
+            "steps": 18,
+            "finished": false,
+            "verified": false,
+            "stale_rejections": 1,
+            "apply_failures": 1,
+            "failed_calls": 2,
+            "tools": [
+              "list_dir",
+              "read_range",
+              "read_range",
+              "propose_edit",
+              "apply_edit",
+              "read_range",
+              "grep",
+              "grep",
+              "read_range",
+              "read_range",
+              "list_dir",
+              "read_range",
+              "propose_edit",
+              "grep",
+              "read_range",
+              "read_range",
+              "find_symbol",
+              "grep",
+              "grep",
+              "read_range",
+              "grep",
+              "read_range",
+              "read_range",
+              "grep"
+            ],
+            "error": null
+          }
+        ]
+      },
+      {
+        "name": "e2-control-2",
+        "arm": "control",
+        "duration_s": 18.56,
+        "total_steps": 31,
+        "stale_rejections": 2,
+        "duplicate_region_edits": 0,
+        "files_changed": 1,
+        "prompt_tokens": 104346,
+        "agents": [
+          {
+            "agent_id": "add-bug",
+            "job_id": "job-add-bug",
+            "task": "Fix the negative-number clamping bug in the `add` function in calc/ops.py. Only change `add`.",
+            "steps": 7,
+            "finished": true,
+            "verified": true,
+            "stale_rejections": 0,
+            "apply_failures": 0,
+            "failed_calls": 0,
+            "tools": [
+              "list_dir",
+              "find_symbol",
+              "read_range",
+              "read_range",
+              "propose_edit",
+              "apply_edit",
+              "read_range",
+              "grep",
+              "grep"
+            ],
+            "error": null
+          },
+          {
+            "agent_id": "div-bug",
+            "job_id": "job-div-bug",
+            "task": "Fix the missing division-by-zero guard in the `div` function in calc/ops.py. Only change `div`.",
+            "steps": 9,
+            "finished": true,
+            "verified": true,
+            "stale_rejections": 1,
+            "apply_failures": 1,
+            "failed_calls": 1,
+            "tools": [
+              "list_dir",
+              "find_symbol",
+              "read_range",
+              "read_range",
+              "propose_edit",
+              "apply_edit",
+              "read_range",
+              "propose_edit",
+              "apply_edit",
+              "read_range"
+            ],
+            "error": null
+          },
+          {
+            "agent_id": "mod-bug",
+            "job_id": "job-mod-bug",
+            "task": "Fix the wrong operator in the `mod` function in calc/ops.py. Only change `mod`.",
+            "steps": 5,
+            "finished": true,
+            "verified": true,
+            "stale_rejections": 0,
+            "apply_failures": 0,
+            "failed_calls": 0,
+            "tools": [
+              "read_range",
+              "propose_edit",
+              "apply_edit",
+              "read_range"
+            ],
+            "error": null
+          },
+          {
+            "agent_id": "add-bug-2",
+            "job_id": "job-add-bug-2",
+            "task": "Fix the negative-number clamping bug in the `add` function in calc/ops.py, and also correct the stale docstring that describes the bug. Only change `add`.",
+            "steps": 10,
+            "finished": false,
+            "verified": false,
+            "stale_rejections": 1,
+            "apply_failures": 1,
+            "failed_calls": 2,
+            "tools": [
+              "list_dir",
+              "read_range",
+              "read_range",
+              "propose_edit",
+              "apply_edit",
+              "read_range",
+              "propose_edit",
+              "read_range",
+              "read_range",
+              "grep"
+            ],
+            "error": null
+          }
+        ]
+      },
+      {
+        "name": "e2-control-3",
+        "arm": "control",
+        "duration_s": 16.92,
+        "total_steps": 28,
+        "stale_rejections": 1,
+        "duplicate_region_edits": 0,
+        "files_changed": 1,
+        "prompt_tokens": 86731,
+        "agents": [
+          {
+            "agent_id": "add-bug",
+            "job_id": "job-add-bug",
+            "task": "Fix the negative-number clamping bug in the `add` function in calc/ops.py. Only change `add`.",
+            "steps": 8,
+            "finished": false,
+            "verified": false,
+            "stale_rejections": 0,
+            "apply_failures": 0,
+            "failed_calls": 1,
+            "tools": [
+              "list_dir",
+              "find_symbol",
+              "read_range",
+              "read_range",
+              "propose_edit",
+              "grep",
+              "grep",
+              "read_range",
+              "grep",
+              "read_range"
+            ],
+            "error": null
+          },
+          {
+            "agent_id": "div-bug",
+            "job_id": "job-div-bug",
+            "task": "Fix the missing division-by-zero guard in the `div` function in calc/ops.py. Only change `div`.",
+            "steps": 6,
+            "finished": true,
+            "verified": true,
+            "stale_rejections": 0,
+            "apply_failures": 0,
+            "failed_calls": 0,
+            "tools": [
+              "list_dir",
+              "find_symbol",
+              "read_range",
+              "read_range",
+              "propose_edit",
+              "apply_edit",
+              "read_range"
+            ],
+            "error": null
+          },
+          {
+            "agent_id": "mod-bug",
+            "job_id": "job-mod-bug",
+            "task": "Fix the wrong operator in the `mod` function in calc/ops.py. Only change `mod`.",
+            "steps": 8,
+            "finished": true,
+            "verified": true,
+            "stale_rejections": 1,
+            "apply_failures": 1,
+            "failed_calls": 1,
+            "tools": [
+              "read_range",
+              "propose_edit",
+              "apply_edit",
+              "read_range",
+              "propose_edit",
+              "apply_edit",
+              "read_range"
+            ],
+            "error": null
+          },
+          {
+            "agent_id": "add-bug-2",
+            "job_id": "job-add-bug-2",
+            "task": "Fix the negative-number clamping bug in the `add` function in calc/ops.py, and also correct the stale docstring that describes the bug. Only change `add`.",
+            "steps": 6,
+            "finished": true,
+            "verified": true,
+            "stale_rejections": 0,
+            "apply_failures": 0,
+            "failed_calls": 0,
+            "tools": [
+              "read_range",
+              "list_dir",
+              "read_range",
+              "propose_edit",
+              "apply_edit",
+              "read_range"
+            ],
+            "error": null
+          }
+        ]
+      }
+    ],
+    "ledger": [
+      {
+        "name": "e2-ledger-1",
+        "arm": "ledger",
+        "duration_s": 20.68,
+        "total_steps": 32,
+        "stale_rejections": 1,
+        "duplicate_region_edits": 0,
+        "files_changed": 1,
+        "prompt_tokens": 104749,
+        "agents": [
+          {
+            "agent_id": "add-bug",
+            "job_id": "job-add-bug",
+            "task": "Fix the negative-number clamping bug in the `add` function in calc/ops.py. Only change `add`.",
+            "steps": 6,
+            "finished": true,
+            "verified": true,
+            "stale_rejections": 0,
+            "apply_failures": 0,
+            "failed_calls": 0,
+            "tools": [
+              "list_dir",
+              "find_symbol",
+              "read_range",
+              "read_range",
+              "propose_edit",
+              "apply_edit",
+              "read_range"
+            ],
+            "error": null
+          },
+          {
+            "agent_id": "div-bug",
+            "job_id": "job-div-bug",
+            "task": "Fix the missing division-by-zero guard in the `div` function in calc/ops.py. Only change `div`.",
+            "steps": 7,
+            "finished": true,
+            "verified": true,
+            "stale_rejections": 0,
+            "apply_failures": 0,
+            "failed_calls": 0,
+            "tools": [
+              "read_range",
+              "find_symbol",
+              "read_range",
+              "grep",
+              "list_dir",
+              "propose_edit",
+              "apply_edit",
+              "read_range"
+            ],
+            "error": null
+          },
+          {
+            "agent_id": "mod-bug",
+            "job_id": "job-mod-bug",
+            "task": "Fix the wrong operator in the `mod` function in calc/ops.py. Only change `mod`.",
+            "steps": 10,
+            "finished": true,
+            "verified": true,
+            "stale_rejections": 1,
+            "apply_failures": 1,
+            "failed_calls": 1,
+            "tools": [
+              "read_range",
+              "find_symbol",
+              "read_range",
+              "propose_edit",
+              "apply_edit",
+              "read_range",
+              "read_range",
+              "propose_edit",
+              "apply_edit",
+              "read_range"
+            ],
+            "error": null
+          },
+          {
+            "agent_id": "add-bug-2",
+            "job_id": "job-add-bug-2",
+            "task": "Fix the negative-number clamping bug in the `add` function in calc/ops.py, and also correct the stale docstring that describes the bug. Only change `add`.",
+            "steps": 9,
+            "finished": false,
+            "verified": false,
+            "stale_rejections": 0,
+            "apply_failures": 0,
+            "failed_calls": 2,
+            "tools": [
+              "read_range",
+              "list_dir",
+              "read_range",
+              "propose_edit",
+              "propose_edit",
+              "grep",
+              "grep",
+              "read_range",
+              "grep",
+              "grep",
+              "read_range"
+            ],
+            "error": null
+          }
+        ]
+      },
+      {
+        "name": "e2-ledger-2",
+        "arm": "ledger",
+        "duration_s": 15.93,
+        "total_steps": 30,
+        "stale_rejections": 2,
+        "duplicate_region_edits": 0,
+        "files_changed": 1,
+        "prompt_tokens": 99653,
+        "agents": [
+          {
+            "agent_id": "add-bug",
+            "job_id": "job-add-bug",
+            "task": "Fix the negative-number clamping bug in the `add` function in calc/ops.py. Only change `add`.",
+            "steps": 9,
+            "finished": false,
+            "verified": false,
+            "stale_rejections": 1,
+            "apply_failures": 1,
+            "failed_calls": 2,
+            "tools": [
+              "list_dir",
+              "find_symbol",
+              "read_range",
+              "read_range",
+              "propose_edit",
+              "apply_edit",
+              "read_range",
+              "propose_edit",
+              "read_range",
+              "read_range",
+              "read_range"
+            ],
+            "error": null
+          },
+          {
+            "agent_id": "div-bug",
+            "job_id": "job-div-bug",
+            "task": "Fix the missing division-by-zero guard in the `div` function in calc/ops.py. Only change `div`.",
+            "steps": 6,
+            "finished": true,
+            "verified": true,
+            "stale_rejections": 0,
+            "apply_failures": 0,
+            "failed_calls": 0,
+            "tools": [
+              "list_dir",
+              "find_symbol",
+              "read_range",
+              "read_range",
+              "propose_edit",
+              "apply_edit",
+              "read_range"
+            ],
+            "error": null
+          },
+          {
+            "agent_id": "mod-bug",
+            "job_id": "job-mod-bug",
+            "task": "Fix the wrong operator in the `mod` function in calc/ops.py. Only change `mod`.",
+            "steps": 5,
+            "finished": true,
+            "verified": true,
+            "stale_rejections": 0,
+            "apply_failures": 0,
+            "failed_calls": 0,
+            "tools": [
+              "read_range",
+              "propose_edit",
+              "apply_edit",
+              "read_range"
+            ],
+            "error": null
+          },
+          {
+            "agent_id": "add-bug-2",
+            "job_id": "job-add-bug-2",
+            "task": "Fix the negative-number clamping bug in the `add` function in calc/ops.py, and also correct the stale docstring that describes the bug. Only change `add`.",
+            "steps": 10,
+            "finished": true,
+            "verified": true,
+            "stale_rejections": 1,
+            "apply_failures": 1,
+            "failed_calls": 1,
+            "tools": [
+              "read_range",
+              "list_dir",
+              "read_range",
+              "propose_edit",
+              "apply_edit",
+              "read_range",
+              "propose_edit",
+              "apply_edit",
+              "read_range",
+              "read_range"
+            ],
+            "error": null
+          }
+        ]
+      },
+      {
+        "name": "e2-ledger-3",
+        "arm": "ledger",
+        "duration_s": 19.4,
+        "total_steps": 35,
+        "stale_rejections": 5,
+        "duplicate_region_edits": 0,
+        "files_changed": 1,
+        "prompt_tokens": 121773,
+        "agents": [
+          {
+            "agent_id": "add-bug",
+            "job_id": "job-add-bug",
+            "task": "Fix the negative-number clamping bug in the `add` function in calc/ops.py. Only change `add`.",
+            "steps": 9,
+            "finished": true,
+            "verified": true,
+            "stale_rejections": 1,
+            "apply_failures": 1,
+            "failed_calls": 1,
+            "tools": [
+              "list_dir",
+              "find_symbol",
+              "read_range",
+              "read_range",
+              "propose_edit",
+              "apply_edit",
+              "read_range",
+              "propose_edit",
+              "apply_edit",
+              "read_range"
+            ],
+            "error": null
+          },
+          {
+            "agent_id": "div-bug",
+            "job_id": "job-div-bug",
+            "task": "Fix the missing division-by-zero guard in the `div` function in calc/ops.py. Only change `div`.",
+            "steps": 6,
+            "finished": true,
+            "verified": true,
+            "stale_rejections": 0,
+            "apply_failures": 0,
+            "failed_calls": 0,
+            "tools": [
+              "list_dir",
+              "find_symbol",
+              "read_range",
+              "read_range",
+              "propose_edit",
+              "apply_edit",
+              "read_range"
+            ],
+            "error": null
+          },
+          {
+            "agent_id": "mod-bug",
+            "job_id": "job-mod-bug",
+            "task": "Fix the wrong operator in the `mod` function in calc/ops.py. Only change `mod`.",
+            "steps": 10,
+            "finished": false,
+            "verified": false,
+            "stale_rejections": 2,
+            "apply_failures": 2,
+            "failed_calls": 2,
+            "tools": [
+              "read_range",
+              "propose_edit",
+              "apply_edit",
+              "read_range",
+              "propose_edit",
+              "apply_edit",
+              "read_range",
+              "propose_edit",
+              "apply_edit",
+              "read_range"
+            ],
+            "error": null
+          },
+          {
+            "agent_id": "add-bug-2",
+            "job_id": "job-add-bug-2",
+            "task": "Fix the negative-number clamping bug in the `add` function in calc/ops.py, and also correct the stale docstring that describes the bug. Only change `add`.",
+            "steps": 10,
+            "finished": false,
+            "verified": false,
+            "stale_rejections": 2,
+            "apply_failures": 2,
+            "failed_calls": 2,
+            "tools": [
+              "read_range",
+              "list_dir",
+              "read_range",
+              "propose_edit",
+              "apply_edit",
+              "read_range",
+              "propose_edit",
+              "apply_edit",
+              "read_range",
+              "grep",
+              "grep"
+            ],
+            "error": null
+          }
+        ]
+      }
+    ]
+  }
+}

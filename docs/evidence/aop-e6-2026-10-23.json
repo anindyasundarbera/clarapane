@@ -1,0 +1,44 @@
+{
+  "experiment": "E6",
+  "rule": "useful only if precision == 1.0 and recall == 1.0 for every agent",
+  "deterministic": true,
+  "dirty_files": [
+    ".aop-ledger/",
+    "calc/ops.py",
+    "calc/util.py",
+    "docs/notes.md"
+  ],
+  "agents": [
+    {
+      "agent": "alpha",
+      "attributed": [
+        "calc/ops.py"
+      ],
+      "true_own": [
+        "calc/ops.py"
+      ],
+      "foreign": [],
+      "missed": [],
+      "precision": 1.0,
+      "recall": 1.0,
+      "passed": true
+    },
+    {
+      "agent": "beta",
+      "attributed": [
+        "calc/util.py",
+        "docs/notes.md"
+      ],
+      "true_own": [
+        "calc/util.py",
+        "docs/notes.md"
+      ],
+      "foreign": [],
+      "missed": [],
+      "precision": 1.0,
+      "recall": 1.0,
+      "passed": true
+    }
+  ],
+  "passed": true
+}

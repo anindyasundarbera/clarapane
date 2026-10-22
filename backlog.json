@@ -312,7 +312,7 @@
     {
       "id": "aop-coordination-research",
       "title": "Research whether a shared intent ledger measurably helps concurrent agents",
-      "status": "planned",
+      "status": "done",
       "priority": "medium",
       "area": "research",
       "deferred_on": "2026-10-23",
@@ -334,14 +334,44 @@
         "docs/research/"
       ],
       "acceptance": [
-        "A concurrency fixture exists that FAILS on HEAD with no ledger; the failing run is recorded as the mandate.",
-        "E3 reports declared-vs-observed agreement; >20% contradicted means the declared namespace ships disabled.",
-        "E2 compares control vs ledger arms with matched model, sha, and step cap, and both reports name the model that actually ran.",
-        "Every new eval case declares gate_writes and plant_injection rather than relying on case.id.",
-        "If the fixture cannot produce a conflict, the item is closed as 'not mandated' with that evidence rather than reopened."
+        "A concurrency fixture exists that FAILS on HEAD with no ledger; the failing run is recorded as the mandate. [DONE: 1 stale rejection]",
+        "E3 reports declared-vs-observed agreement; >20% contradicted means the declared namespace ships disabled. [DONE: 0% contradicted]",
+        "E2 compares control vs ledger arms with matched model, sha, and step cap, and both reports name the model that actually ran. [DONE: REJECTED, 5->8 stale]",
+        "Every new eval case declares gate_writes and plant_injection rather than relying on case.id. [DONE]",
+        "If the fixture cannot produce a conflict, the item is closed as 'not mandated' with that evidence rather than reopened. [N/A: fixture produced the failure]"
       ],
       "notes": [
-        "2026-10-23: deferred pending explicit user approval of the research phase; see the research plan for the full gap register."
+        "2026-10-23: deferred pending explicit user approval of the research phase; see the research plan for the full gap register.",
+        "2026-10-23: research complete. E2 REJECTED the coordination claim (stale rejections 5->8). E3 PASSED (0% contradicted intent). E6 PASSED (100% precision/recall per-agent file attribution). Verdict: build attribution, not coordination. See docs/evidence/aop-decision-2026-10-23.md"
+      ],
+      "resolved_on": "2026-10-23"
+    },
+    {
+      "id": "aop-attribution-ledger",
+      "title": "Build the observed-effect ledger for per-agent file attribution",
+      "status": "planned",
+      "priority": "high",
+      "area": "agent-loop",
+      "deferred_on": "2026-10-23",
+      "why": "git status records that a file changed, not which job changed it. E6 measured this: with two agents in one tree, git status gives every agent the same 4 dirty files, so a commit scoped to 'my changes' sweeps foreign work. The AOP ledger's observed namespace attributed files at 100% precision and 100% recall. This is the only AOP claim that survived measurement; the coordination claim was rejected (E2, stale rejections 5->8).",
+      "trigger": "When two agents share one working tree and a commit must be scoped to one job. Already needed: work was left uncommitted during the AOP session for exactly this reason.",
+      "design": [
+        "Record OBSERVED effects only (tool, path, before/after hash, ok). The declared namespace passed E3 but is a description, never an authority.",
+        "Emit from the existing tool_call seam in sdk_agent._execute -- no new place opens a log file.",
+        "Expose one bounded read tool returning 'files this job changed', never 'files on disk'.",
+        "Keep it harness-authored: the model must not be able to author the record it is judged by.",
+        "Do NOT build coordination ('who else is editing this') -- E2 measured no benefit and a slight regression."
+      ],
+      "touchpoints": [
+        "src/clarapane/events_schema.py",
+        "src/clarapane/sdk_agent.py",
+        "src/clarapane/registry.py"
+      ],
+      "acceptance": [
+        "Given N agents in one working tree, each agent can name exactly its own changed files with precision 1.0 and recall 1.0 (extend the E6 deterministic test).",
+        "A commit scoped from the ledger never includes a file no tool call for this job touched.",
+        "The ledger is emitted through EventLog and appears in the validated trace schema.",
+        "A test proves an agent cannot attribute a file it did not write, even if its declared intent names it."
       ]
     }
   ]
