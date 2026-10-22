@@ -4,7 +4,7 @@
 PY := .venv/bin/python
 export PYTHONPATH := src
 
-.PHONY: help test audit run models clean backlog commit
+.PHONY: help test audit run models clean backlog commit eval
 
 help:
 	@echo "make test       run the test suite (includes the defect audit)"
@@ -12,6 +12,7 @@ help:
 	@echo "make run TASK=  run the agent on a task"
 	@echo "make models     list tool-capable cloud models"
 	@echo "make backlog    show actionable deferred work"
+	@echo "make eval       run the eval suite (live model calls, ~2-4 min)"
 	@echo "make clean      remove caches and bytecode"
 
 test:
@@ -37,6 +38,10 @@ commit:
 	ALLOW_UNSTAGED=1 git commit -F - <<'MSG_EOF'
 	$(MSG)
 	MSG_EOF
+
+# Live eval run. Not part of `make test`: it needs network and a model.
+eval:
+	$(PY) -m evals.runner --json evals/latest.json
 
 clean:
 	find . -name '__pycache__' -not -path './.venv/*' -type d -exec rm -rf {} + 2>/dev/null || true

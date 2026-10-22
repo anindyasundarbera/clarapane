@@ -2,7 +2,7 @@
   "version": 2,
   "purpose": "A glass-box coding agent whose every action is proposed, gated, and logged. The claims must be proven by measurement, not asserted by architecture.",
   "updated": "2026-10-23",
-  "current_step": "evals",
+  "current_step": "execution",
   "steps": [
     {
       "id": "foundation",
@@ -22,14 +22,20 @@
     {
       "id": "evals",
       "title": "Measure the agent against real tasks",
-      "status": "in_progress",
+      "status": "done",
       "why": "Every capability so far is asserted, not measured. Until there is a score, 'it works' is an opinion and every extension is a guess.",
-      "covered": []
+      "covered": [
+        "evals/ harness: 5 cases with deterministic assertions, no LLM judge",
+        "per-case isolated workspaces so order cannot change the score",
+        "pinned model and git sha recorded, so a score is attributable",
+        "negative control proves the suite reports failure, not just success",
+        "baseline: 5/5 on commit b3a9d21 with deepseek-v4.1-flash:cloud"
+      ]
     },
     {
       "id": "execution",
       "title": "Extend based on what evals reveal",
-      "status": "pending",
+      "status": "in_progress",
       "why": "The expected gap is verification: without run_command the agent cannot prove its edits work. Build only what measurement justifies, not what sounds complete.",
       "covered": []
     },
