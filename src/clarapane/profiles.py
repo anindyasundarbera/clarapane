@@ -40,7 +40,11 @@ from __future__ import annotations
 import re
 from typing import Literal
 
-ProfileName = Literal["read_only", "edit", "exec"]
+# A profile may only name tools that are actually registered. `exec` is declared
+# below but commented out because run_command / git_checkpoint / git_rollback do not
+# exist yet: advertising it made `--profile exec` raise ValueError at startup, and no
+# test caught it because every test built only the read/edit registries.
+ProfileName = Literal["read_only", "edit"]
 
 # Ordered from least to most capability. Each entry names a tool that must be
 # registered; `select` fails loudly if a profile references an unknown tool.
@@ -50,16 +54,19 @@ PROFILES: dict[ProfileName, tuple[str, ...]] = {
         "list_dir", "grep", "read_range", "find_symbol",
         "propose_edit", "apply_edit", "write_file", "finish",
     ),
-    "exec": (
-        "list_dir", "grep", "read_range", "find_symbol",
-        "propose_edit", "apply_edit", "write_file",
-        "run_command", "git_checkpoint", "git_rollback", "finish",
-    ),
+    # "exec" belongs here once run_command, git_checkpoint and git_rollback are
+    # registered. Adding a profile before its tools exist makes the profile
+    # unusable, not aspirational:
+    #   "exec": (
+    #       "list_dir", "grep", "read_range", "find_symbol",
+    #       "propose_edit", "apply_edit", "write_file",
+    #       "run_command", "git_checkpoint", "git_rollback", "finish",
+    #   ),
 }
 
 # Ordered from least to most capable. Used by the planned escalation tool to
 # enforce monotonic widening: a run may ask for more, never for less.
-ESCALATION_ORDER: tuple[ProfileName, ...] = ("read_only", "edit", "exec")
+ESCALATION_ORDER: tuple[ProfileName, ...] = ("read_only", "edit")
 
 
 def can_escalate(current: ProfileName, target: ProfileName) -> bool:
@@ -69,7 +76,7 @@ def can_escalate(current: ProfileName, target: ProfileName) -> bool:
 DESCRIPTIONS: dict[ProfileName, str] = {
     "read_only": "Inspect and answer. No mutations, no command execution.",
     "edit": "Read and edit files. No command execution.",
-    "exec": "Full capability: read, edit, run commands, checkpoint and roll back.",
+    # "exec": "Full capability: read, edit, run commands, checkpoint and roll back.",
 }
 
 
@@ -119,9 +126,12 @@ def infer(task: str) -> ProfileName:
     def has(vocab: tuple[str, ...]) -> bool:
         return any(w in vocab for w in words)
 
-    # Execution intent outranks editing: "fix X then run tests" needs exec.
+    # Execution intent ("run pytest", "install", "build") needs a profile that can
+    # run commands. None exists yet, so such tasks degrade to `edit` -- enough to
+    # prepare the change, and the missing verification is visible in the trace
+    # rather than hidden behind a profile that cannot be constructed.
     if has(("run", "pytest", "execute", "install", "build", "commit", "rollback")):
-        return "exec"
+        return "edit"
 
     # The LEADING verb decides intent. This matters because words like "add" and
     # "find" are both verbs and plausible symbol names: "where is `add` defined?"
