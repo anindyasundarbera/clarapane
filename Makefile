@@ -4,7 +4,7 @@
 PY := .venv/bin/python
 export PYTHONPATH := src
 
-.PHONY: help test audit run models clean backlog commit eval
+.PHONY: help test audit run models clean backlog commit eval divergences
 
 help:
 	@echo "make test       run the test suite (includes the defect audit)"
@@ -13,6 +13,7 @@ help:
 	@echo "make models     list tool-capable cloud models"
 	@echo "make backlog    show actionable deferred work"
 	@echo "make eval       run the eval suite (live model calls, ~2-4 min)"
+	@echo "make divergences report failed attempts and guesses from traces"
 	@echo "make clean      remove caches and bytecode"
 
 test:
@@ -49,3 +50,8 @@ clean:
 	find . -name '__pycache__' -not -path './.venv/*' -type d -exec rm -rf {} + 2>/dev/null || true
 	rm -rf .pytest_cache .mypy_cache .ruff_cache
 	@echo "cleaned caches"
+
+# How predictable is the agent? Every failure and every guess, counted by class.
+# --strict fails on HARNESS divergence only: our own mispredictions are defects.
+divergences:
+	$(PY) -m clarapane.divergence --traces runs --strict

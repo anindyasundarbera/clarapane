@@ -127,7 +127,10 @@ def run_case(
 
     gate = PolicyGate(allow_writes=case.gate_writes, reason=f"eval:{case.id}")
 
-    trace = keep_trace or (sandbox.parent / "trace.jsonl")
+    # Persist the trace under runs/, not inside the throwaway sandbox: the divergence
+    # report reads runs/, and a metric that cannot see its own data is decoration.
+    # Tagged with the case id so a count is attributable to a specific eval.
+    trace = keep_trace or (PROJECT_ROOT / "runs" / f"eval-{case.id}.jsonl")
     if keep_trace:
         keep_trace.parent.mkdir(parents=True, exist_ok=True)
     try:
@@ -278,6 +281,17 @@ def main(argv: list[str] | None = None) -> int:
     total = len(results)
     score = passed / total if total else 0.0
 
+    # A case that never reached the model tested nothing. Counting it as a pass
+    # manufactures confidence, and counting it as a failure buries an infrastructure
+    # problem under a score. It is neither, so it is reported as INVALID and fails
+    # the run -- the same defect the AOP mandate gate hit when all agents crashed on
+    # a missing key and it printed a clean "no failures" verdict.
+    idle = [r.id for r in results if r.steps == 0]
+    if idle:
+        print("=" * 60)
+        print(f"INVALID: {len(idle)} case(s) never called the model: {idle}")
+        print("This is a harness or credential failure, not a score.")
+
     print("=" * 60)
     models = sorted({r.model for r in results if r.model})
     # Never the word "pinned": that names the policy, not the model, and a score
@@ -294,13 +308,15 @@ def main(argv: list[str] | None = None) -> int:
         "passed": passed,
         "total": total,
         "score": round(score, 4),
+        "valid": not idle,
+        "idle_cases": idle,
         "cases": [r.as_dict() for r in results],
     }
     if args.json_out:
         Path(args.json_out).write_text(json.dumps(report, indent=2) + "\n")
         print(f"report: {args.json_out}")
 
-    return 0 if passed == total else 1
+    return 0 if (passed == total and not idle) else 1
 
 
 if __name__ == "__main__":

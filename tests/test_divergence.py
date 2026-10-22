@@ -204,3 +204,16 @@ def test_divergence_never_breaks_the_single_terminal_event_invariant(tmp_path):
     events = [json.loads(line) for line in trace.read_text().splitlines() if line.strip()]
     ends = [e for e in events if e["event"] == "run_end"]
     assert len(ends) == 1, f"expected exactly one run_end, got {len(ends)}"
+
+
+def test_eval_runner_refuses_to_score_a_run_that_never_reached_the_model():
+    """A vacuous verdict is worse than no verdict.
+
+    Regression: the AOP mandate gate reported "NOT MANDATED" when every agent had
+    crashed on a missing provider key. Zero failures from zero data looked exactly
+    like zero failures from a clean run.
+    """
+    runner_src = (PROJECT_ROOT / "evals" / "runner.py").read_text()
+    assert "idle = [r.id for r in results if r.steps == 0]" in runner_src
+    assert '"valid": not idle' in runner_src
+    assert 'return 0 if (passed == total and not idle) else 1' in runner_src

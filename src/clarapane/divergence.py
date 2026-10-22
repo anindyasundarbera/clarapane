@@ -226,3 +226,76 @@ def summarise(events: list[dict[str, Any]]) -> dict[str, Any]:
 def eliminate_candidates() -> list[Rule]:
     """Classes a rule could remove entirely, i.e. where tightening is possible."""
     return [r for r in RULES.values() if r.remedy == "eliminate"]
+
+
+# ------------------------------------------------------------------------ CLI
+def main(argv: list[str] | None = None) -> int:
+    """Report divergence over committed traces.
+
+    Exists so the number is a command, not an opinion -- the same reason
+    `scripts/audit_defects.py` is executable.
+    """
+    import argparse
+    import json as _json
+    from pathlib import Path
+
+    ap = argparse.ArgumentParser(description="Summarise divergence over traces")
+    ap.add_argument("--traces", default="runs", help="Directory of JSONL traces")
+    ap.add_argument("--json", dest="json_out", default=None)
+    ap.add_argument("--strict", action="store_true",
+                    help="Exit 1 if any harness divergence is found")
+    args = ap.parse_args(argv)
+
+    root = Path(args.traces)
+    files = sorted(root.glob("*.jsonl"))
+    if not files:
+        print(f"no traces under {root} -- nothing to summarise")
+        return 0
+
+    all_events: list[dict[str, Any]] = []
+    per_run: dict[str, list[dict[str, Any]]] = {}
+    for path in files:
+        for line in path.read_text().splitlines():
+            if not line.strip():
+                continue
+            rec = _json.loads(line)
+            all_events.append(rec)
+            per_run.setdefault(rec.get("run_id", "?"), []).append(rec)
+
+    total = summarise(all_events)
+    print(f"traces: {len(files)} file(s), {len(per_run)} run(s)")
+    print(f"divergence: {total['total']}")
+    for source, count in total["by_source"].items():
+        print(f"  {source:8} {count}")
+    print("by class:")
+    for name, count in total["by_class"].items():
+        rule = RULES.get(name)
+        owner = rule.source if rule else "?"
+        remedy = rule.remedy if rule else "?"
+        print(f"  {name:20} {count:4}  source={owner:8} remedy={remedy}")
+
+    noisy = sorted(
+        ((len([e for e in evs if e.get("event") == "divergence"]), rid)
+         for rid, evs in per_run.items()),
+        reverse=True,
+    )[:5]
+    if noisy and noisy[0][0]:
+        print("noisiest runs:")
+        for count, rid in noisy:
+            if count:
+                print(f"  {rid}  {count}")
+
+    if args.json_out:
+        from pathlib import Path as _P
+
+        _P(args.json_out).write_text(_json.dumps(total, indent=2) + "\n")
+
+    if args.strict and total["harness_defects"]:
+        print(f"FAIL: {total['harness_defects']} harness divergence(s) -- our own "
+              "mispredictions are defects")
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
