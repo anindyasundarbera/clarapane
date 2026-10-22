@@ -29,6 +29,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 SRC = PROJECT_ROOT / "src"
 TRACE = PROJECT_ROOT / "runs" / "runs.jsonl"
 BACKLOG = PROJECT_ROOT / "backlog.json"
+PLAN = PROJECT_ROOT / "plan.json"
 
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
@@ -45,7 +46,7 @@ FIX_CUTOFFS: dict[str, str] = {
     "one-finish-per-run": "2026-10-22T00:45:00+05:30",
     # approvals must name an operator and bind to a payload fingerprint
     "approval-binding": "2026-10-22T01:00:00+05:30",
-    # every commit on main must arrive through a reviewed pull request
+    # every commit on main must arrive through a pull request (existence, not review)
     "no-direct-main-commits": "2026-10-22T00:40:00+05:30",
 }
 
@@ -325,6 +326,61 @@ def check_one_finish_event_per_run(report: Report) -> None:
         report.ok("one-finish-per-run")
 
 
+def check_plan_integrity(report: Report) -> None:
+    """The training plan must exist, be well-formed, and have exactly one active step.
+
+    Section 0a of AGENTS.md makes deviation a defect. A defect needs a reference point:
+    without a machine-readable plan, "did we deviate?" is an opinion. This check keeps
+    the reference point honest -- exactly one step in progress, steps in order, and no
+    step marked done without saying what it taught.
+    """
+    if not PLAN.exists():
+        report.add("MAJOR", "plan-integrity", "plan.json is missing",
+                   "restore the training plan; see AGENTS.md section 0a")
+        return
+
+    try:
+        data = json.loads(PLAN.read_text())
+    except json.JSONDecodeError as exc:
+        report.add("MAJOR", "plan-integrity", f"plan.json is invalid JSON: {exc}", "")
+        return
+
+    steps = data.get("steps", [])
+    if not steps:
+        report.add("MAJOR", "plan-integrity", "plan.json declares no steps", "")
+        return
+
+    problems: list[str] = []
+    in_progress = [s["id"] for s in steps if s.get("status") == "in_progress"]
+    if len(in_progress) != 1:
+        problems.append(f"expected exactly one in_progress step, found {in_progress}")
+
+    current = data.get("current_step")
+    if in_progress and current not in in_progress:
+        problems.append(f"current_step={current!r} does not match in_progress={in_progress}")
+
+    # A step cannot start while an earlier one is unfinished: that is the deviation
+    # this whole mechanism exists to catch.
+    statuses = [s.get("status") for s in steps]
+    for index, status in enumerate(statuses):
+        if status in ("in_progress", "done") and index > 0:
+            earlier = statuses[:index]
+            if any(st not in ("done",) for st in earlier):
+                problems.append(
+                    f"step {steps[index]['id']!r} is {status} while an earlier step is not done"
+                )
+
+    for step in steps:
+        if step.get("status") == "done" and not step.get("covered"):
+            problems.append(f"done step {step['id']!r} does not say what it covered")
+
+    if problems:
+        report.add("MAJOR", "plan-integrity", "; ".join(problems[:3]),
+                   "fix plan.json; deviation from the plan is a defect (AGENTS.md 0a)")
+    else:
+        report.ok(f"plan-integrity (current: {current})")
+
+
 def check_no_direct_main_commits(report: Report) -> None:
     """Commits that landed on main without going through a pull request.
 
@@ -332,8 +388,12 @@ def check_no_direct_main_commits(report: Report) -> None:
     bypassed (--no-verify, another clone, an admin override). This is the detective
     control: it reports what actually happened rather than what was supposed to.
 
-    A commit counts as reviewed when its message carries a PR reference in the Refs:
-    footer, which `gh pr merge --squash` produces.
+    A commit counts as having gone through a PR when its message carries a PR
+    reference in the Refs: footer, which `gh pr merge --squash` produces.
+
+    This verifies that a PR EXISTED. It does not verify that anyone reviewed it --
+    the repository has one collaborator and the ruleset requires zero approvals.
+    Naming it "unreviewed" would overstate what the check knows.
     """
     import re
     import subprocess
@@ -506,6 +566,7 @@ def check_all() -> Report:
         check_one_finish_event_per_run,
         check_approval_binding,
         check_no_direct_main_commits,
+        check_plan_integrity,
     ):
         check(report)
     return report

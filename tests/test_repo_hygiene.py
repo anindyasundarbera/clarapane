@@ -318,3 +318,140 @@ def test_approval_decisions_always_carry_operator_and_fingerprint():
         decision = gate.decide("apply_edit", args)
         assert decision.operator, "decision has no accountable operator"
         assert len(decision.fingerprint) == 12, "decision is not bound to a payload"
+
+
+# ------------------------------------------------------- scope lock (rule 0a)
+
+
+def test_plan_exists_and_declares_its_purpose():
+    """Deviation is only measurable against a written plan (AGENTS.md 0a)."""
+    import json
+
+    plan_file = PROJECT_ROOT / "plan.json"
+    assert plan_file.exists(), "plan.json is missing"
+
+    data = json.loads(plan_file.read_text())
+    assert data.get("purpose"), "plan.json must state why this project exists"
+    assert data.get("steps"), "plan.json must list the steps"
+    assert data.get("current_step"), "plan.json must name the current step"
+    assert data.get("not_in_plan"), "plan.json must list what is explicitly out of scope"
+
+
+def test_exactly_one_step_is_in_progress():
+    """Two active steps means two tracks, which is how a plan derails."""
+    import json
+
+    data = json.loads((PROJECT_ROOT / "plan.json").read_text())
+    active = [s["id"] for s in data["steps"] if s.get("status") == "in_progress"]
+    assert len(active) == 1, f"expected one in-progress step, found {active}"
+
+
+def test_plan_steps_are_sequential():
+    """A later step cannot start before an earlier one is done."""
+    import json
+
+    data = json.loads((PROJECT_ROOT / "plan.json").read_text())
+    seen_unfinished = None
+    for step in data["steps"]:
+        if step.get("status") in ("done", "in_progress"):
+            assert seen_unfinished is None, (
+                f"step {step['id']!r} advanced while {seen_unfinished!r} was unfinished"
+            )
+        if step.get("status") != "done":
+            seen_unfinished = seen_unfinished or step["id"]
+
+
+def test_agents_md_documents_the_scope_lock():
+    text = (PROJECT_ROOT / "AGENTS.md").read_text()
+    assert "Purpose and scope lock" in text
+    assert "Deviation is a defect" in text
+    assert "plan.json" in text
+
+
+def test_cli_surfaces_the_current_plan_step():
+    """Every run should state what it is for, so drift is visible immediately."""
+    cli = (PROJECT_ROOT / "src" / "clarapane" / "cli.py").read_text()
+    assert "current_plan_step" in cli
+    assert "plan step" in cli
+
+
+# ------------------------------------------------- review honesty (rule 1c)
+
+
+def test_no_document_claims_the_pr_path_guarantees_review():
+    """A PR with zero required approvals is a record, not a review.
+
+    Reworded after the operator asked "who is the reviewer?" and the answer was
+    nobody. A document claiming review that never happens manufactures evidence of
+    scrutiny -- the same defect as accepting "proceed" as consent.
+    """
+    import re
+
+    misleading = [
+        r"reviewed PR",
+        r"diff is reviewed",
+        r"evidence of review",
+        r"review is required",
+    ]
+    offenders: list[str] = []
+    for path in (PROJECT_ROOT / "AGENTS.md", PROJECT_ROOT / ".githooks" / "pre-commit",
+                 PROJECT_ROOT / ".githooks" / "pre-push",
+                 PROJECT_ROOT / "scripts" / "audit_defects.py"):
+        text = path.read_text()
+        for pattern in misleading:
+            for match in re.finditer(pattern, text, re.IGNORECASE):
+                # Quoted as a thing NOT to say is fine. Look at the whole
+                # sentence containing the match, not a fixed window, because the
+                # disclaiming clause can sit on either side of it.
+                line_start = text.rfind("\n", 0, match.start()) + 1
+                line_end = text.find("\n", match.end())
+                line = text[line_start: line_end if line_end != -1 else len(text)]
+                prev = text[max(0, line_start - 200):line_start]
+                context = prev + line
+                if any(marker in context for marker in (
+                    "Do not describe", "not that it was reviewed",
+                    "not accepted as a substitute", "Calling it evidence of review",
+                )):
+                    continue
+                offenders.append(f"{path.name}: {match.group(0)!r}")
+    assert not offenders, f"documents overclaim review: {offenders}"
+
+
+def test_ruleset_approval_count_matches_the_documented_claim():
+    """If the ruleset later requires approvals, the docs must be updated with it."""
+    import re
+
+    agents = (PROJECT_ROOT / "AGENTS.md").read_text()
+    match = re.search(r"required_approving_review_count:\s*(\d+)", agents)
+    assert match, "AGENTS.md must state the actual approval requirement"
+    count = int(match.group(1))
+    assert count == 0, (
+        "AGENTS.md documents 0 approvals; if the ruleset now requires approvals, "
+        "update section 1c so the claim and the control agree"
+    )
+
+
+# --------------------------------------------- reviewer-found defect (regression)
+
+
+def test_current_plan_step_survives_malformed_plan(tmp_path, monkeypatch):
+    """Regression: found by four independent reviewer models, confirmed by hand.
+
+    json.loads succeeds on [] / null / "x" / 42, so the handler's
+    `except (OSError, ValueError)` missed the AttributeError that followed and a
+    corrupt plan crashed every CLI run.
+    """
+    import json as _json
+
+    from clarapane import cli
+
+    plan_file = tmp_path / "plan.json"
+    monkeypatch.setattr(cli, "PROJECT_ROOT", tmp_path)
+
+    for payload in ("[]", "null", '"hello"', "42", '{"steps":[1,2]}', '{"steps":[]}'):
+        plan_file.write_text(payload)
+        assert cli.current_plan_step() is None, f"{payload!r} should degrade to None"
+
+    plan_file.write_text(_json.dumps({"steps": [{"id": "x", "status": "in_progress",
+                                                 "title": "X"}]}))
+    assert cli.current_plan_step() == "X"

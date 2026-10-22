@@ -1,11 +1,13 @@
 #!/bin/sh
 # Refuse to commit directly to a protected branch.
 #
-# Why: this project requires that every change reaches main through a reviewed PR.
-# A commit made straight onto main bypasses review, and on 2026-10-21 twenty-eight
-# of them did exactly that. A local hook is preventive, not authoritative -- it can be
-# bypassed with --no-verify -- so the authoritative control is the GitHub ruleset and
-# the detective control is scripts/audit_defects.py.
+# Why: every change must reach main through a pull request, so the diff is recorded
+# and linked from the commit. This does NOT ensure independent review -- see
+# AGENTS.md 1c for what the ruleset does and does not guarantee. On 2026-10-21
+# twenty-eight commits bypassed the PR path entirely.
+# A local hook is preventive, not authoritative: it can be bypassed with --no-verify.
+# The authoritative control is the GitHub ruleset; the detective control is
+# scripts/audit_defects.py.
 #
 # Protected branches come from PROTECTED_BRANCHES (space-separated), default "main".
 # Escape hatch for a deliberate hotfix, recorded in the trace by the audit:
@@ -26,9 +28,9 @@ EOF
     cat >&2 <<EOF
 pre-commit: refusing to commit directly to '$current'
 
-Every change must reach '$current' through a pull request, so that the diff is
-reviewed and the history keeps a link to the discussion. Direct commits are how
-28 unreviewed changes landed on main.
+Every change must reach '$current' through a pull request, so the diff is recorded
+and the history keeps a link to it. Direct commits are how 28 changes landed on main
+with no PR, no diff record, and no second pair of eyes.
 
 Fix:
   git switch -c feat/<short-description>     # recommended

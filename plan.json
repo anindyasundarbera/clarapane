@@ -1,0 +1,49 @@
+{
+  "version": 1,
+  "purpose": "Prepare for an agentic-AI interview by building an agent hands-on. A training artefact, not a product.",
+  "updated": "2026-10-22",
+  "current_step": "langchain",
+  "steps": [
+    {
+      "id": "sdk-agent",
+      "title": "Raw OpenAI SDK agent",
+      "status": "done",
+      "why": "Understand the loop without a framework hiding it: model call, tool dispatch, observation, repeat.",
+      "covered": ["agent loop", "tool calling", "conversation state", "error recovery", "reasoning traces"]
+    },
+    {
+      "id": "ollama-models",
+      "title": "Ollama Cloud models, switchable per run",
+      "status": "done",
+      "why": "Prove the provider boundary is real by switching models without touching agent code.",
+      "covered": ["OpenAI-compatible endpoint", "model listing with capabilities", "runtime model switch"]
+    },
+    {
+      "id": "langchain",
+      "title": "LangChain: the same agent",
+      "status": "in_progress",
+      "why": "See what the framework hides and what it costs. Compare against the SDK version line by line.",
+      "covered": []
+    },
+    {
+      "id": "langgraph",
+      "title": "LangGraph: the same agent as a graph",
+      "status": "pending",
+      "why": "State, conditional edges, and interrupts for human approval -- the interview-relevant payoff.",
+      "covered": []
+    },
+    {
+      "id": "evals",
+      "title": "Evaluation and interview rehearsal",
+      "status": "pending",
+      "why": "Prove the agent works and practise explaining the design aloud.",
+      "covered": []
+    }
+  ],
+  "not_in_plan": [
+    "Additional guardrails or audit checks beyond section 0 of AGENTS.md",
+    "Web UI, trace viewer, or dashboard",
+    "Multi-agent orchestration",
+    "Deployment, packaging, or publishing"
+  ]
+}

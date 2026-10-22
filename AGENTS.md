@@ -16,6 +16,58 @@ committing, before touching secrets, and before skipping a tool gate.
 
 ---
 
+## 0a. Purpose and scope lock — read before proposing work
+
+**This project exists to prepare one person for an agentic-AI interview by building
+an agent hands-on.** It is a training artefact, not a product. Every activity must
+serve that purpose.
+
+The plan lives in **`plan.json`**, is validated by `scripts/audit_defects.py`
+(`plan-integrity`), and its current step is printed on every CLI run. In order:
+
+1. Raw OpenAI SDK: basic agent loop, tool calling, conversation state
+2. Ollama Cloud models, switchable per run
+3. LangChain: the same agent, to see what the framework hides
+4. LangGraph: the same agent as a graph, for state and interrupts
+5. Evaluation and interview rehearsal
+
+**Deviation is a defect.** It is logged with the same severity vocabulary as section 0.
+
+### The rule
+
+Before starting any work, ask: **does this serve the current step of the plan?**
+
+- If yes, do it.
+- If it is a genuine BLOCKER, fix it, and say plainly that it interrupted the plan.
+- Otherwise **record it in `backlog.json` and continue the plan.** Do not build it now.
+
+`plan.json` advances only when a step's work is finished: mark it `done`, name what it
+covered, set the next step to `in_progress`, and update `current_step`. The audit fails
+if two steps are active at once or a later step starts before an earlier one finishes.
+
+Every unplanned addition needs an explicit decision from the operator. "It would make
+the system better" is not sufficient: a better system that never reaches the interview
+preparation is a failed artefact.
+
+### Why this rule is written in the imperative
+
+It was earned. A three-hour interview-preparation session ran more than five hours and
+never reached LangChain, because each turn surfaced a real defect and each defect was
+fixed immediately. Individually justified, collectively a derailment. The failure was
+not any single fix; it was never asking whether the fix belonged in this session.
+
+### Recognising a deviation in progress
+
+Any of these is a signal to stop and check scope:
+
+- More new infrastructure than new understanding
+- The plan's next step has slipped by more than one work item
+- The operator has not confirmed the current task in the last few steps
+- A tool, guardrail, or policy is being added that the interview plan never called for
+
+When that happens: stop, state the deviation, and ask whether to continue or return to
+the plan. Do not silently continue.
+
 ## 0. Defect policy — read this first
 
 **Serious and blocking defects outrank every other task.** Feature work, phase
@@ -130,6 +182,27 @@ operator read or understood it.
 `main` is protected by a GitHub ruleset (id 25580492, `enforcement: active`,
 `current_user_can_bypass: never`). Every change reaches it through a pull request.
 
+**What this does and does not guarantee.** Be precise, because the difference matters:
+
+| Enforced | Not enforced |
+|---|---|
+| Direct pushes to main are rejected server-side | That a *second* person read the change |
+| Every change is recorded as a PR with a diff | That the change was understood by anyone |
+| Force-push and deletion are blocked | That review happened at all |
+
+The ruleset is configured with `required_approving_review_count: 0` because this
+repository currently has exactly one collaborator. A PR therefore guarantees **an
+auditable record**, not **independent review**. Do not describe it as "reviewed".
+
+**Self-review is not review**, and it is not accepted as a substitute. If the author
+is the only reviewer, governance has already failed: the check exists to catch what the
+author cannot see, and the author cannot supply that. A self-approval recorded as a
+passing gate would be worse than no gate, because it manufactures evidence of scrutiny
+that never occurred -- the same defect as accepting "proceed" as consent.
+
+Independent review requires either a second human collaborator or an automated reviewer
+whose findings are treated as blocking. Neither exists yet; see `backlog.json`.
+
 This was a real violation: 28 commits landed directly on `main`, and one was pushed.
 The ruleset now makes that impossible server-side, regardless of local configuration.
 
@@ -156,8 +229,9 @@ gh pr create --fill
 gh pr merge --squash --delete-branch
 ```
 
-A squash merge records the PR number in the commit, which is what the audit looks
-for as evidence of review.
+A squash merge records the PR number in the commit. The audit treats that number as
+evidence that a **PR existed**, not that it was reviewed. Calling it evidence of review
+would repeat the overclaim this section was written to correct.
 
 Deliberate override for an emergency, visible to the audit afterwards:
 `ALLOW_PROTECTED_COMMIT=1` / `ALLOW_PROTECTED_PUSH=1`.
