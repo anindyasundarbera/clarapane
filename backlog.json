@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated": "2026-10-22",
+  "updated": "2026-10-23",
   "items": [
     {
       "id": "request-capability-escalation",
@@ -136,6 +136,35 @@
         "An eval task asking 'what functions does this file define' resolves using outline only, with fewer prompt tokens than the read_range equivalent.",
         "read_range remains available and is still required for propose_edit's old_str.",
         "A test asserts outline output size is smaller than full-line JSON for a file over 100 lines."
+      ]
+    },
+    {
+      "id": "reviewer-agent",
+      "title": "Add an automated reviewer gate that blocks merges",
+      "status": "planned",
+      "priority": "high",
+      "area": "review",
+      "deferred_on": "2026-10-23",
+      "why": "The repo has one collaborator and required_approving_review_count=0, so a PR guarantees a record, not scrutiny. Self-review is explicitly rejected as a substitute. Measured: a model reviewer works on a bounded diff (4-17s, four models found the same real bug), but a reasoning model with a 20k-char diff exhausted its budget with 22k chars of internal reasoning and returned empty content.",
+      "trigger": "Before any change lands that touches security, policy, or the agent loop",
+      "design": [
+        "Reviewer runs on the PR diff with a hard character budget; larger diffs are chunked per file.",
+        "Per-model token budget and a required non-empty answer; a length-truncated empty completion is a failed review, not a pass.",
+        "Findings are classified BUG / SECURITY / NIT and must cite file:line plus a quote.",
+        "A BUG or SECURITY finding blocks the merge; NIT is advisory.",
+        "The reviewer must never approve by default: no findings is a positive statement it has to make explicitly.",
+        "Second stage compares findings across two models; only findings reproduced by both are blocking, to control false positives."
+      ],
+      "touchpoints": [
+        "scripts/review_pr.py",
+        ".github/workflows/",
+        "scripts/audit_defects.py"
+      ],
+      "acceptance": [
+        "A PR containing a known injected bug is blocked by the reviewer with file:line evidence.",
+        "A clean PR produces an explicit 'no findings' record rather than silence.",
+        "An empty or truncated reviewer response is recorded as a failure, never as approval.",
+        "The reviewer's findings are appended to the run trace so the review itself is auditable."
       ]
     }
   ]
