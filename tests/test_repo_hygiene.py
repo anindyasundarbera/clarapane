@@ -455,3 +455,34 @@ def test_current_plan_step_survives_malformed_plan(tmp_path, monkeypatch):
     plan_file.write_text(_json.dumps({"steps": [{"id": "x", "status": "in_progress",
                                                  "title": "X"}]}))
     assert cli.current_plan_step() == "X"
+
+
+# --------------------------------------------------- eval suite is specified
+
+
+def test_eval_suite_backlog_item_is_actionable():
+    """A high-priority item must be executable by a future session without rethinking.
+
+    Checks the fields that make a plan actionable rather than aspirational: a concrete
+    trigger, per-case assertions, and acceptance criteria that could fail.
+    """
+    from clarapane import backlog
+
+    item = backlog.find(backlog.load(), "eval-suite")
+    assert item["status"] in ("planned", "in_progress")
+    assert item["trigger"], "needs a trigger"
+    assert len(item.get("cases", [])) >= 6, "too few cases to measure anything"
+    assert item.get("runner_design"), "needs a runner design"
+    assert item.get("non_goals"), "needs explicit non-goals to prevent scope creep"
+
+    for case in item["cases"]:
+        assert case.get("name") and case.get("assert"), f"case lacks assertions: {case}"
+        assert len(case["assert"]) >= 2, f"case {case['name']!r} asserts too little"
+
+    # The suite must be able to fail, not just confirm successes.
+    expected_failures = [c for c in item["cases"] if "EXPECTED TO FAIL" in c.get("status", "")]
+    assert expected_failures, "no case is expected to fail: the suite could be vacuous"
+    for case in expected_failures:
+        assert case.get("expected_failure_reason"), (
+            f"{case['name']!r} must say why it fails, or it becomes a silent known-bug"
+        )
