@@ -289,6 +289,122 @@ def check_agent_facing_reference_is_bounded() -> list[Finding]:
     return []
 
 
+def check_capability_tools_exist() -> list[Finding]:
+    """Every tool named in the capability document must actually be registered.
+
+    docs/CAPABILITIES.md claims the agent can do things. A tool removed from the code
+    but left in the document is the same defect class as the `exec` profile that
+    advertised tools which did not exist -- the document then promises capability the
+    system does not have.
+    """
+    doc = _read(PROJECT_ROOT / "docs" / "CAPABILITIES.md")
+    if not doc:
+        return [Finding("docs/CAPABILITIES.md", "missing")]
+
+    from clarapane.policy import Workspace
+    from clarapane.proposals import ProposalStore
+    from clarapane.registry import ToolRegistry
+    from clarapane.tools.exec_tools import register_exec_tools
+    from clarapane.tools.finish_tool import register_finish_tool
+    from clarapane.tools.git_tools import register_git_tools
+    from clarapane.tools.read_tools import register_read_tools
+    from clarapane.tools.write_tools import register_write_tools
+
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as tmp:
+        registry = ToolRegistry()
+        workspace = Workspace(root=Path(tmp))
+        register_read_tools(registry, workspace)
+        register_write_tools(registry, workspace, ProposalStore())
+        register_exec_tools(registry, workspace)
+        register_git_tools(registry, workspace)
+        register_finish_tool(registry)
+        registered = set(registry.names())
+
+    # Only prose inside the capability tables is treated as a tool claim. The document
+    # also names profiles (`read_only`, `edit`, `exec`) and commands (`make test`), and
+    # an earlier prefix-based filter both missed invented tools (`teleport_files`) and
+    # risked flagging non-tools. Table rows are the unambiguous place a tool can appear.
+    table_names: set[str] = set()
+    for line in doc.splitlines():
+        if not line.startswith("|"):
+            continue
+        first_cell = line.split("|")[1].strip()
+        for name in re.findall(r"`([a-z_][a-z0-9_]*)`", first_cell):
+            table_names.add(name)
+
+    out: list[Finding] = []
+    for name in sorted(table_names):
+        if name not in registered:
+            out.append(Finding(
+                "docs/CAPABILITIES.md",
+                f"table names tool {name!r}, which is not registered",
+            ))
+    return out
+
+
+def check_capability_cites_real_proof() -> list[Finding]:
+    """A capability claim must point at a test file that exists.
+
+    "Verified by tests/foo.py" is only meaningful if the file is there. Docs that cite
+    deleted tests are worse than docs with no citations, because they look rigorous.
+    """
+    doc = _read(PROJECT_ROOT / "docs" / "CAPABILITIES.md")
+    if not doc:
+        return []
+
+    out: list[Finding] = []
+    for ref in sorted(set(re.findall(r"tests/test_[a-z_]+\.py", doc))):
+        if not (PROJECT_ROOT / ref).exists():
+            out.append(Finding("docs/CAPABILITIES.md", f"cites {ref}, which does not exist"))
+    return out
+
+
+def check_ci_claims_match_reality() -> list[Finding]:
+    """A document must not claim CI is absent when a workflow exists.
+
+    Real instance: README said "No CI exists yet. Nothing runs on push" for months after
+    .github/workflows/ci.yml was added. No check looked at prose claims about CI, so the
+    drift survived -- and a stale claim about the safety net is exactly what makes people
+    stop trusting the safety net.
+    """
+    workflows = list((PROJECT_ROOT / ".github" / "workflows").glob("*.yml"))
+    has_ci = bool(workflows)
+
+    out: list[Finding] = []
+    for name in ("README.md", "AGENTS.md", "docs/CAPABILITIES.md", "docs/ARCHITECTURE.md"):
+        text = _read(PROJECT_ROOT / name)
+        if not text:
+            continue
+        lowered = text.lower()
+        claims_absent = (
+            "no ci exists" in lowered
+            or "no ci yet" in lowered
+            or "nothing runs on push" in lowered
+        )
+        if claims_absent and has_ci:
+            out.append(Finding(name, "claims CI does not exist, but a workflow is present"))
+    return out
+
+
+def check_intent_documents_goal() -> list[Finding]:
+    """The project must state what it is for, or scope drift has no reference point.
+
+    Section 0a of AGENTS.md makes deviation a defect; `plan.json` orders the steps; this
+    document says why any of it matters. Without it, "should we build this?" has no
+    answer better than taste.
+    """
+    doc = _read(PROJECT_ROOT / "docs" / "INTENT.md")
+    if not doc:
+        return [Finding("docs/INTENT.md", "missing")]
+    out: list[Finding] = []
+    for required in ("## The goal", "## Explicitly not the goal", "## What \"done\" looks like"):
+        if required not in doc:
+            out.append(Finding("docs/INTENT.md", f"missing section {required!r}"))
+    return out
+
+
 CHECKS = (
     check_readme_exists,
     check_profile_table,
@@ -298,6 +414,10 @@ CHECKS = (
     check_version_single_source,
     check_setup_document_matches_code,
     check_agent_facing_reference_is_bounded,
+    check_capability_tools_exist,
+    check_capability_cites_real_proof,
+    check_ci_claims_match_reality,
+    check_intent_documents_goal,
 )
 
 

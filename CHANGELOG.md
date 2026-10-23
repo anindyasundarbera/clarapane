@@ -16,6 +16,25 @@ consumed as one.
 ## [Unreleased]
 
 ### Added
+- `docs/INTENT.md` — what the project is for, what "done" looks like, and what is
+  explicitly out of scope. The reference point for judging whether a change belongs.
+- `docs/CAPABILITIES.md` — what the agent can and cannot do, every claim tied to a
+  named module and test.
+- `docs/ARCHITECTURE.md` — the eight invariants, the loop mechanics, the trace, and the
+  deliberate non-choices with the measurements that rejected them.
+- `tests/test_git_tools.py` — checkpoint and rollback were untested; the capability
+  document cited a test file that did not exist, and the new docs checker caught it.
+- Four documentation checks: capability tools exist, capability citations resolve,
+  CI claims match reality, and INTENT states its goal and non-goals.
+
+### Fixed
+- README claimed "No CI exists yet" after CI was added — a stale claim about the safety
+  net, which is the kind that makes people stop trusting the net.
+- README said the agent cannot verify its own edits; `run_command` and the
+  `fix-and-verify` case now show it doing exactly that.
+- A link in README pointed at `aopa-decision-...md`; the file is `aop-decision-...md`.
+
+### Added
 - `README.md` — the entry point this repository did not have. Every checkable claim in
   it is verified against the code by a script rather than trusted.
 - `clarapane.identity.version()` — single-source version resolution that works from a
