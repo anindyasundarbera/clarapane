@@ -25,9 +25,11 @@ only real answer, and it is out of scope for this project.
 
 from __future__ import annotations
 
+import os
 import shlex
 import shutil
 import subprocess
+import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -110,8 +112,16 @@ def validate_argv(argv: list[str], workspace: Workspace) -> None:
             f"command not allowed: {program!r}. Allowed: {sorted(ALLOWED)}. "
             "This is an allowlist; there is no shell."
         )
-    if shutil.which(program) is None:
-        raise ToolError(f"{program!r} is allowed but not installed on this machine")
+    # Search the PATH the CHILD will receive, not this process's PATH. Using the
+    # parent PATH here approved programs the child could not find -- exactly the
+    # mismatch that made `pytest` work locally (present in /usr/bin) and fail in CI
+    # (present only in .venv/bin, which the child PATH did not include).
+    child_path = _child_env(workspace)["PATH"]
+    if shutil.which(program, path=child_path) is None:
+        raise ToolError(
+            f"{program!r} is allowed but not installed where the agent can see it. "
+            f"Searched PATH={child_path}"
+        )
 
     if program == "git":
         sub = next((a for a in argv[1:] if not a.startswith("-")), "")
@@ -129,6 +139,72 @@ def validate_argv(argv: list[str], workspace: Workspace) -> None:
                 workspace.resolve(arg)
             except PolicyError:
                 raise PolicyError(f"argument {arg!r} points outside the workspace") from None
+
+
+
+# Environment handed to a child process.
+#
+# Why this is not "just inherit everything"
+# -----------------------------------------
+# Two failure modes pull in opposite directions, and the previous hardcoded
+# PATH got the balance wrong in a way that only showed up in CI:
+#
+#   * Inheriting the full parent environment lets the agent read every secret this
+#     process holds (provider keys, tokens). A command's output becomes model input,
+#     so a leak here is a leak into the conversation.
+#   * Hardcoding /usr/local/bin:/usr/bin:/bin guarantees the agent cannot see its own
+#     virtualenv. `pytest` exists only at .venv/bin/pytest on a clean machine, so
+#     "prove your fix works" failed in CI while passing locally -- the worst kind of
+#     defect, because the local signal said the capability was fine.
+#
+# The compromise: a minimal, explicit allowlist of variables, plus the interpreter's
+# own bin directory so the venv is reachable. Nothing else is passed through, so a
+# secret is absent by construction rather than by a denylist that must be kept current.
+_SECRET_MARKERS = ("KEY", "TOKEN", "SECRET", "PASSWORD", "CREDENTIAL")
+
+
+def _child_env(workspace: Workspace) -> dict[str, str]:
+    """The environment a command may see: enough to run, not enough to leak."""
+    bin_dirs = [str(Path(sys.executable).parent)]  # the venv (or system) bin
+    venv_bin = Path(sys.executable).parent
+    if (venv_bin.parent / "bin").is_dir():
+        bin_dirs.append(str(venv_bin.parent / "bin"))
+    bin_dirs += ["/usr/local/bin", "/usr/bin", "/bin"]
+
+    seen: list[str] = []
+    for entry in bin_dirs:
+        if entry not in seen:
+            seen.append(entry)
+
+    env = {
+        "PATH": ":".join(seen),
+        "HOME": str(workspace.root),
+        "PYTHONDONTWRITEBYTECODE": "1",
+        # Git needs an identity to commit in a test repository; without one a command
+        # fails for a reason unrelated to the agent's work.
+        "GIT_AUTHOR_NAME": "clarapane",
+        "GIT_AUTHOR_EMAIL": "clarapane@localhost",
+        "GIT_COMMITTER_NAME": "clarapane",
+        "GIT_COMMITTER_EMAIL": "clarapane@localhost",
+    }
+
+    # Locale: python can crash writing output under a non-UTF-8 default.
+    for name in ("LANG", "LC_ALL", "TZ"):
+        if name in os.environ:
+            env[name] = os.environ[name]
+
+    # Never pass a secret-looking variable. This is a backstop, not the guarantee --
+    # the guarantee is that the list above is explicit and short.
+    for name, value in os.environ.items():
+        if any(marker in name.upper() for marker in _SECRET_MARKERS):
+            continue
+        if name in env:
+            continue
+        # A command may legitimately need PYTHONPATH or a proxy; allow those alone.
+        if name in ("PYTHONPATH", "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY"):
+            env[name] = value
+
+    return env
 
 
 def run_command(
@@ -159,11 +235,20 @@ def run_command(
             text=True,
             timeout=bounded_timeout,
             shell=False,          # explicit: this is the whole point
-            env={"PATH": "/usr/local/bin:/usr/bin:/bin", "HOME": str(workspace.root),
-                 "PYTHONDONTWRITEBYTECODE": "1"},
+            env=_child_env(workspace),
         )
         code = completed.returncode
         out, err = completed.stdout, completed.stderr
+    except FileNotFoundError as exc:
+        # Before this, a missing program propagated as an uncaught exception and the
+        # trace recorded "FileNotFoundError" with no guidance. Name the program and
+        # the PATH that was searched, so the failure explains itself.
+        raise ToolError(
+            f"program not found: {argv[0]!r}. "
+            f"Searched PATH={_child_env(workspace)['PATH']}. "
+            "Use an allowlisted program, or `python -m <module>` so the workspace "
+            "interpreter resolves it."
+        ) from exc
     except subprocess.TimeoutExpired as exc:
         timed_out = True
         code = -1

@@ -7,6 +7,8 @@ import subprocess
 
 import pytest
 
+from pathlib import Path
+
 from clarapane.policy import PolicyError
 from clarapane.registry import ToolError, ToolRegistry
 from clarapane.tools.exec_tools import ALLOWED, register_exec_tools, run_command, validate_argv
@@ -140,3 +142,73 @@ def test_run_command_is_gated_and_declared_exec(tools):
     spec = tools.get("run_command")
     assert spec.risk == "exec"
     assert spec.gate is True, "an exec tool must require approval"
+
+
+# ------------------------------------------------------- child environment (CI parity)
+
+def test_child_env_makes_the_interpreter_bin_reachable(workspace):
+    """Regression: PATH was hardcoded to /usr/local/bin:/usr/bin:/bin.
+
+    On a clean machine `pytest` exists only at .venv/bin/pytest, so the agent could
+    not run the project's test command. Locally /usr/bin/pytest happened to exist and
+    masked it; CI caught it. A capability that works only on the author's machine is
+    not a capability.
+    """
+    import sys as _sys
+    from clarapane.tools.exec_tools import _child_env
+
+    path = _child_env(workspace)["PATH"].split(":")
+    assert str(Path(_sys.executable).parent) in path, (
+        f"the interpreter's bin dir is not on the child PATH: {path}"
+    )
+
+
+def test_child_env_does_not_leak_secrets(workspace, monkeypatch):
+    """A command's output becomes model input, so a leaked key enters the conversation."""
+    from clarapane.tools.exec_tools import _child_env
+
+    monkeypatch.setenv("SOME_PROVIDER_API_KEY", "sk-should-never-appear")
+    monkeypatch.setenv("GITHUB_TOKEN", "ghp-should-never-appear")
+    monkeypatch.setenv("DB_PASSWORD", "hunter2")
+
+    env = _child_env(workspace)
+    leaked = [k for k in env if any(m in k.upper() for m in
+                                    ("KEY", "TOKEN", "SECRET", "PASSWORD", "CREDENTIAL"))]
+    assert not leaked, f"secret-shaped variables passed through: {leaked}"
+
+
+def test_run_command_can_reach_pytest(workspace):
+    """The exact capability the eval case depends on."""
+    from clarapane.tools.exec_tools import run_command
+
+    result = run_command(workspace, ["pytest", "--version"])
+    assert result["exit_code"] == 0, result
+    assert "pytest" in result["stdout"].lower()
+
+
+def test_missing_program_is_an_error_not_a_crash(workspace):
+    """A disallowed program must be a clean ToolError the model can recover from."""
+    from clarapane.registry import ToolError
+    from clarapane.tools.exec_tools import run_command
+
+    with pytest.raises(ToolError):
+        run_command(workspace, ["no-such-program-anywhere"])
+
+
+def test_absent_allowlisted_program_names_the_search_path(workspace, monkeypatch):
+    """An allowlisted program that is not installed must fail with guidance.
+
+    Regression: FileNotFoundError propagated uncaught, so the trace recorded a bare
+    exception with no hint. The message now names the program and the PATH searched.
+    """
+    from clarapane.registry import ToolError
+    from clarapane.tools import exec_tools
+
+    # Simulate an allowlisted program that is absent from every PATH entry.
+    monkeypatch.setitem(exec_tools.ALLOWED, "fake-but-allowed", "test double")
+    with pytest.raises(ToolError) as excinfo:
+        exec_tools.run_command(workspace, ["fake-but-allowed"])
+
+    message = str(excinfo.value)
+    assert "not installed where the agent can see it" in message
+    assert "PATH=" in message, "the error must say where it looked"

@@ -19,6 +19,8 @@ averages away a false success would hide the exact defect the harness exists to 
 
 from __future__ import annotations
 
+import re
+
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
@@ -343,14 +345,44 @@ def agent_ran_the_test_itself(ctx: CheckContext) -> tuple[bool, str]:
 
 
 def test_passed_in_agent_output(ctx: CheckContext) -> tuple[bool, str]:
-    """The agent's own pytest run must show the fixture test passing."""
+    """The agent's own pytest run must show the fixture test passing.
+
+    Deliberately strict about HOW it was proven. This check once passed because the
+    agent, unable to import pytest, ran the test functions with an inline runner of
+    its own construction. That is not the capability under test: the case exists to
+    prove the agent can invoke the project's real test command, and a bespoke runner
+    silently succeeds even when pytest is broken or absent.
+
+    So the check requires pytest itself to be the program that reported success.
+    A custom runner is reported as a distinct failure, because that is a different
+    behaviour, not a near miss.
+    """
+    pytest_seen = False
+    custom_runner = False
     for e in _events(ctx):
         if e["event"] != "tool_call" or e.get("tool") != "run_command" or not e.get("ok"):
             continue
         result = e.get("result") or {}
-        out = f"{result.get('stdout','')}"
-        if "passed" in out and "failed" not in out.split("passed")[0][-40:]:
-            return True, f"agent's pytest reported: {out.strip().splitlines()[-1][:60]}"
+        argv = " ".join(result.get("argv") or [])
+        out = f"{result.get('stdout', '')}"
+        is_pytest = "pytest" in argv
+        if is_pytest:
+            pytest_seen = True
+            # "4 passed" with no failures. Check the summary line, not the whole body:
+            # a passing run can legitimately mention the word "failed" in a test name.
+            tail = " ".join(out.strip().splitlines()[-3:]).lower()
+            if re.search(r"\b\d+ passed\b", tail) and " failed" not in tail:
+                return True, f"agent's pytest reported: {out.strip().splitlines()[-1][:60]}"
+        elif re.search(r"\b\d+\s+(of\s+\d+\s+)?pass", out, re.I) or "inline runner" in out.lower():
+            custom_runner = True
+
+    if custom_runner and not pytest_seen:
+        return False, (
+            "the agent proved the fix with its own inline runner instead of pytest; "
+            "the capability under test is running the project's real test command"
+        )
+    if custom_runner and pytest_seen:
+        return False, "pytest was attempted but success came from a custom runner"
     return False, "no successful pytest output found in the agent's own command runs"
 
 
