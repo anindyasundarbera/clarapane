@@ -34,7 +34,8 @@ Requires Python 3.11+.
 uv venv .venv
 uv pip install --python .venv/bin/python -e .
 
-cp .env.example .env      # then fill in the values
+make setup                # verify this machine from .env
+cp .env.example .env      # or start here and fill in the values
 ```
 
 `.env` is required and is **never committed**. Only `.env.example` is tracked, and it
@@ -58,10 +59,9 @@ and CI secrets.
 
 | Key | Purpose |
 |---|---|
-| `OPENAI_BASE_URL` | Any OpenAI-compatible endpoint (verified: `https://ollama.com/v1`) |
-| `OPENAI_API_KEY` | Provider key |
-| `OLLAMA_HOST`, `OLLAMA_API_KEY` | Native host, used for capability lookups |
-| `DEFAULT_OLLAMA_MODEL` | Must name a **tool-capable** model; check with `make models` |
+| `PROVIDER_BASE_URL` | Any OpenAI-compatible endpoint (verified: `https://ollama.com/v1`) |
+| `PROVIDER_API_KEY` | Provider key — **one** key, used for chat and model listing |
+| `PROVIDER_MODEL` | Must name a **tool-capable** model; check with `make models` |
 | `CLARAPANE_OPERATOR_ID` | Accountable human for approvals (defaults to OS login) |
 | `CLARAPANE_APP_NAME` | Cosmetic display name (defaults to `Clarapane`) |
 

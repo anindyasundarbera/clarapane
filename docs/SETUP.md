@@ -83,13 +83,20 @@ it contains key names with **no values**. `scripts/audit_defects.py` fails
 
 | Key | Required | Notes |
 |---|---|---|
-| `OPENAI_BASE_URL` | yes | Any OpenAI-compatible endpoint. Verified: `https://ollama.com/v1` |
-| `OPENAI_API_KEY` | **yes, secret** | Provider key |
-| `OLLAMA_HOST` | yes | Native host for capability lookups, `https://api.ollama.com` |
-| `OLLAMA_API_KEY` | **yes, secret** | |
-| `DEFAULT_OLLAMA_MODEL` | yes | Must name a **tool-capable** model. Check with `make models` |
+| `PROVIDER_BASE_URL` | yes | Any OpenAI-compatible endpoint. Verified: `https://ollama.com/v1` |
+| `PROVIDER_API_KEY` | **yes, secret** | **One** key, used for chat *and* model listing |
+| `PROVIDER_MODEL` | yes | Must name a **tool-capable** model. Check with `make models` |
 | `CLARAPANE_OPERATOR_ID` | recommended | Accountable human recorded on every approval. Defaults to the OS login |
 | `CLARAPANE_APP_NAME` | optional | Cosmetic display name only; does not change behaviour |
+
+The names are provider-agnostic on purpose. They were `OPENAI_*`, which named the
+SDK rather than the service — an `OPENAI_API_KEY` holding an Ollama key is a
+mislabelling that costs a confused minute on every new machine. Legacy names are still
+read as a fallback, so an existing `.env` keeps working.
+
+Two dead keys were also removed: `OLLAMA_HOST` and `OLLAMA_API_KEY` were **required by
+the template and read by nothing**. The capability lookup derives its host from
+`PROVIDER_BASE_URL` and authenticates with the same single key.
 
 **On a new device, the secrets must be re-entered by hand.** They are not in git and
 should not be transferred through it. Retrieve them from your provider's dashboard.
@@ -129,12 +136,12 @@ is a hook that silently does nothing.
 ## 5. GitHub Actions secrets
 
 CI has two jobs. The `offline` job needs **nothing** and always runs. The `eval` job
-calls a live model and needs the same five values as `.env`.
+calls a live model and needs the same three provider values as `.env`.
 
 It **fails loudly** when they are missing rather than skipping:
 
 ```
-::error title=Eval cannot run::OPENAI_API_KEY is not configured.
+::error title=Eval cannot run::PROVIDER_API_KEY is not configured.
 This job is red by design: a skipped eval would report success without measuring anything.
 ```
 
@@ -143,17 +150,32 @@ That is intentional. A skipped eval is a green build that tested nothing.
 Set them:
 
 ```bash
-gh secret set OPENAI_BASE_URL       --body "https://ollama.com/v1"
-gh secret set OPENAI_API_KEY        --body "<key>"
-gh secret set OLLAMA_HOST           --body "https://api.ollama.com"
-gh secret set OLLAMA_API_KEY        --body "<key>"
-gh secret set DEFAULT_OLLAMA_MODEL  --body "<tool-capable model>"
+make setup-apply
+```
+
+It reads `.env` and sets `PROVIDER_BASE_URL`, `PROVIDER_API_KEY` and
+`PROVIDER_MODEL` for you — the same values CI will use, so local and remote cannot
+disagree about which key or model is in play. Secret values are passed on stdin, never
+as a process argument (which is world-readable via `/proc` on Linux).
+
+Preview first if you prefer:
+
+```bash
+make setup-apply DRY=1     # or: python scripts/setup_env.py --apply --dry-run
+```
+
+By hand, if you would rather:
+
+```bash
+gh secret set PROVIDER_BASE_URL   --body "https://ollama.com/v1"
+gh secret set PROVIDER_API_KEY    --body "<key>"
+gh secret set PROVIDER_MODEL      --body "<tool-capable model>"
 ```
 
 Verify:
 
 ```bash
-gh secret list                       # expect the five names, no values shown
+gh secret list                       # expect three names, no values shown
 gh run list --workflow=ci.yml        # then re-run and check both jobs
 ```
 
@@ -168,9 +190,20 @@ show `eval suite (live model)` as failed. That is an unset secret, not broken co
 
 Run in order; each step depends on the previous.
 
+**The short path**, once `.env` exists:
+
+```bash
+git clone <repo> && cd clarapane
+cp .env.example .env                       # fill in PROVIDER_* by hand
+make install                               # venv + package + pytest
+make setup                                 # verify everything, change nothing
+make setup-apply                           # enable hooks + push CI secrets from .env
+```
+
+**The explicit path**, if you want each step visible — this is what `make setup` does:
+
 ```bash
 cd agentic_training
-git clone <repo> . && cd clarapane        # or: git pull, then re-create the venv
 
 uv venv .venv
 uv pip install --python .venv/bin/python -e . pytest
@@ -197,7 +230,7 @@ Expected on a healthy setup:
 | `check_commits.py` | `OK: N commit message(s) conform` |
 | `make run` | a banner, a trace appended to `runs/runs.jsonl`, a result |
 
-If `make run` fails with `OPENAI_BASE_URL and OPENAI_API_KEY must be set`, `.env` is
+If `make run` fails with `PROVIDER_BASE_URL and PROVIDER_API_KEY must be set`, `.env` is
 missing or not filled — not a code problem.
 
 ---

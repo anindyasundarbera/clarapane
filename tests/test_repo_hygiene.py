@@ -52,7 +52,7 @@ def test_env_example_contains_no_secret_values():
     assert example.exists(), ".env.example must document the required keys"
 
     # Endpoints and identifiers are not secrets; anything else must be blank.
-    public_keys = {"OPENAI_BASE_URL", "OLLAMA_HOST", "DEFAULT_OLLAMA_MODEL"}
+    public_keys = {"PROVIDER_BASE_URL"}
 
     for line in example.read_text().splitlines():
         line = line.strip()
@@ -723,7 +723,7 @@ def test_setup_guide_check_can_fail():
         assert not findings_for(lambda t: t), "the real guide reports drift"
 
         cases = [
-            (lambda t: t.replace("| `OPENAI_API_KEY` |", "| `MADE_UP_KEY` |"), "env keys"),
+            (lambda t: t.replace("| `PROVIDER_API_KEY` |", "| `MADE_UP_KEY` |"), "env keys"),
             (lambda t: t.replace("scripts/check_docs.py", "scripts/nope.py", 1), "does not exist"),
             (lambda t: t.replace("`commit-msg`, `pre-commit`, `pre-push`", "(hooks)")
                        .replace("enable commit-msg, pre-commit, pre-push", "enable hooks")

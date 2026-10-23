@@ -26,21 +26,21 @@ ENV_PATH = Path(__file__).resolve().parent.parent / ".env"
 
 
 def pin_model(model: str) -> None:
-    """Rewrite DEFAULT_OLLAMA_MODEL in .env, preserving every other line."""
+    """Rewrite PROVIDER_MODEL in .env, preserving every other line."""
     text = ENV_PATH.read_text()
-    pattern = re.compile(r"^DEFAULT_OLLAMA_MODEL=.*$", re.MULTILINE)
+    pattern = re.compile(r"^(?:PROVIDER_MODEL|DEFAULT_OLLAMA_MODEL)=.*$", re.MULTILINE)
     if pattern.search(text):
-        text = pattern.sub(f"DEFAULT_OLLAMA_MODEL={model}", text)
+        text = pattern.sub(f"PROVIDER_MODEL={model}", text)
     else:
-        text = text.rstrip("\n") + f"\nDEFAULT_OLLAMA_MODEL={model}\n"
+        text = text.rstrip("\n") + f"\nPROVIDER_MODEL={model}\n"
     ENV_PATH.write_text(text)
-    print(f"pinned DEFAULT_OLLAMA_MODEL={model}")
+    print(f"pinned PROVIDER_MODEL={model}")
 
 
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--all", action="store_true", help="include models without tool support")
-    ap.add_argument("--set", metavar="MODEL", help="pin a model as DEFAULT_OLLAMA_MODEL")
+    ap.add_argument("--set", metavar="MODEL", help="pin a model as PROVIDER_MODEL")
     args = ap.parse_args()
 
     if args.set:

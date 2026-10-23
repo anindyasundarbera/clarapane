@@ -4,7 +4,7 @@
 PY := .venv/bin/python
 export PYTHONPATH := src
 
-.PHONY: help test audit run models clean backlog commit eval divergences docs
+.PHONY: help test audit run models clean backlog commit eval divergences docs install setup setup-apply setup-check
 
 help:
 	@echo "make test       run the test suite (includes the defect audit)"
@@ -15,6 +15,10 @@ help:
 	@echo "make eval       run the eval suite (live model calls, ~2-4 min)"
 	@echo "make divergences report failed attempts and guesses from traces"
 	@echo "make docs      verify documentation claims against the code"
+	@echo "make install   create .venv and install the package + pytest"
+	@echo "make setup     verify this machine from .env (changes nothing)"
+	@echo "make setup-apply push provider values to CI secrets from .env"
+	@echo "make setup-check verify only, never change anything"
 	@echo "make clean      remove caches and bytecode"
 
 test:
@@ -61,3 +65,20 @@ divergences:
 # clone without hooks still fails on drift.
 docs:
 	$(PY) scripts/check_docs.py
+
+# One command to make a machine work. Reads .env; never prints a secret value.
+install:
+	uv venv .venv
+	uv pip install --python .venv/bin/python -e .
+	uv pip install --python .venv/bin/python pytest
+
+setup:
+	$(PY) scripts/setup_env.py
+
+# Also pushes PROVIDER_* to GitHub Actions secrets, from the same .env, so CI and
+# local cannot disagree about which key or model is in use.
+setup-apply:
+	$(PY) scripts/setup_env.py --apply
+
+setup-check:
+	$(PY) scripts/setup_env.py --check

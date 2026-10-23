@@ -68,6 +68,14 @@ jobs:
       - name: Commit messages
         run: python scripts/check_commits.py
 
+      # No `|| true`: a broken setup script or a stale .env.example must fail the
+      # build. Template-only mode exists precisely so this can be a real gate in CI,
+      # where no provider key is available.
+      - name: Setup template is honest
+        env:
+          PYTHONPATH: src
+        run: python scripts/setup_env.py --template-only
+
   # The live-model measurement. Kept separate because its failure means something
   # different: a score below baseline is a capability regression, not broken code.
   eval:
@@ -89,26 +97,27 @@ jobs:
       # A missing key must FAIL LOUDLY, never skip. A skipped eval is a green build
       # that tested nothing -- the vacuous-result defect this repo already hit three
       # times during the AOP research.
+      # Names are provider-agnostic: this project talks to any OpenAI-COMPATIBLE
+      # endpoint, and an OPENAI_API_KEY holding an Ollama key was a misnomer.
+      # `make setup-apply` sets these from your local .env.
       - name: Require credentials
         env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          PROVIDER_API_KEY: ${{ secrets.PROVIDER_API_KEY }}
         run: |
-          if [ -z "$OPENAI_API_KEY" ]; then
-            echo "::error title=Eval cannot run::OPENAI_API_KEY is not configured."
+          if [ -z "$PROVIDER_API_KEY" ]; then
+            echo "::error title=Eval cannot run::PROVIDER_API_KEY is not configured."
             echo "This job is red by design: a skipped eval would report success"
-            echo "without measuring anything. Add the secret, or disable this job"
-            echo "deliberately in .github/workflows/ci.yml."
+            echo "without measuring anything."
+            echo "Set it from your local .env with: make setup-apply"
             exit 1
           fi
 
       - name: Run eval suite
         env:
           PYTHONPATH: src
-          OPENAI_BASE_URL: ${{ secrets.OPENAI_BASE_URL }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          OLLAMA_HOST: ${{ secrets.OLLAMA_HOST }}
-          OLLAMA_API_KEY: ${{ secrets.OLLAMA_API_KEY }}
-          DEFAULT_OLLAMA_MODEL: ${{ secrets.DEFAULT_OLLAMA_MODEL }}
+          PROVIDER_BASE_URL: ${{ secrets.PROVIDER_BASE_URL }}
+          PROVIDER_API_KEY: ${{ secrets.PROVIDER_API_KEY }}
+          PROVIDER_MODEL: ${{ secrets.PROVIDER_MODEL }}
         run: |
           python -m evals.runner --json evals/latest.json --trace-dir eval-traces
 

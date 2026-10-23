@@ -111,7 +111,7 @@ def build_agent(
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="Clarapane coding agent (raw SDK)")
     ap.add_argument("task", help="Natural-language task for the agent")
-    ap.add_argument("--model", help="Override DEFAULT_OLLAMA_MODEL")
+    ap.add_argument("--model", help="Override PROVIDER_MODEL")
     ap.add_argument("--workspace", default=str(DEFAULT_WORKSPACE),
                     help="Workspace root the agent is jailed to")
     ap.add_argument("--max-steps", type=int, default=12)
