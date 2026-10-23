@@ -4,7 +4,7 @@
 PY := .venv/bin/python
 export PYTHONPATH := src
 
-.PHONY: help test audit run models clean backlog commit eval divergences
+.PHONY: help test audit run models clean backlog commit eval divergences docs
 
 help:
 	@echo "make test       run the test suite (includes the defect audit)"
@@ -14,6 +14,7 @@ help:
 	@echo "make backlog    show actionable deferred work"
 	@echo "make eval       run the eval suite (live model calls, ~2-4 min)"
 	@echo "make divergences report failed attempts and guesses from traces"
+	@echo "make docs      verify documentation claims against the code"
 	@echo "make clean      remove caches and bytecode"
 
 test:
@@ -55,3 +56,8 @@ clean:
 # --strict fails on HARNESS divergence only: our own mispredictions are defects.
 divergences:
 	$(PY) -m clarapane.divergence --traces runs --strict
+
+# Docs that disagree with code are a false claim. Runs in `make test` too, so a fresh
+# clone without hooks still fails on drift.
+docs:
+	$(PY) scripts/check_docs.py

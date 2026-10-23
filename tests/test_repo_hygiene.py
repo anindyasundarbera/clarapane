@@ -252,7 +252,21 @@ def test_no_run_artifact_is_abandoned():
 
 
 def test_pre_commit_hook_is_installed_and_executable():
-    """The hook must exist, be executable, and be the configured hooks path."""
+    """The hook must exist, be executable, and not be configured elsewhere.
+
+    Why an unconfigured hooksPath is a SKIP and a wrong one is a FAIL
+    ----------------------------------------------------------------
+    `core.hooksPath` lives in local git config, which is not committed. A fresh clone
+    and every CI checkout therefore report it empty -- probed in a clean clone:
+    `hooksPath is ''`. Failing there would make the suite red on every CI run for a
+    condition the repository cannot control.
+
+    So this test distinguishes two different situations:
+      * empty      -> the hooks are simply not installed here; report by skipping,
+                      because the controls that DO travel (tests, audit, CI) still ran
+      * a wrong    -> someone pointed hooks at the wrong directory; that is a bug,
+        path          because the rules silently stop applying
+    """
     import os
     import subprocess
 
@@ -264,7 +278,19 @@ def test_pre_commit_hook_is_installed_and_executable():
         ["git", "config", "core.hooksPath"], cwd=PROJECT_ROOT,
         capture_output=True, text=True,
     ).stdout.strip()
-    assert configured == ".githooks", f"core.hooksPath is {configured!r}, not '.githooks'"
+
+    if not configured:
+        pytest.skip(
+            "core.hooksPath is not set in this checkout (expected in a fresh clone "
+            "and in CI). The hooks are inert here; tests and the audit are the "
+            "controls that still apply. Enable locally with: "
+            "git config core.hooksPath .githooks"
+        )
+
+    assert configured == ".githooks", (
+        f"core.hooksPath is {configured!r}, not '.githooks' -- the commit rules "
+        "silently do not apply"
+    )
 
 
 # ---------------------------------------------------- approval integrity (rule)
@@ -536,3 +562,123 @@ def test_check_pr_script_exists_and_is_documented():
     assert (PROJECT_ROOT / "scripts" / "check_pr.py").exists()
     text = (PROJECT_ROOT / "AGENTS.md").read_text()
     assert "check_pr.py" in text, "AGENTS.md does not mention the PR check"
+
+
+# ------------------------------------------------------------------ versioning
+
+
+def test_version_has_exactly_one_source_of_truth():
+    """The version must come from pyproject.toml, not be duplicated in code.
+
+    Regression: `banner()` defaulted to a hardcoded `version="0.1.0"`, so bumping
+    pyproject.toml would leave the CLI banner reporting the old version -- a
+    user-facing claim that silently disagreed with the package metadata.
+    """
+    import re
+
+    pyproject = (PROJECT_ROOT / "pyproject.toml").read_text()
+    match = re.search(r'^version\s*=\s*"([^"]+)"', pyproject, re.M)
+    assert match, "pyproject.toml has no version"
+
+    src = (PROJECT_ROOT / "src" / "clarapane" / "identity.py").read_text()
+    literal = re.search(r'banner\([^)]*version:\s*str\s*=\s*"([0-9][^"]*)"', src)
+    assert literal is None, (
+        f"banner() hardcodes version {literal.group(1)!r}; read it from "
+        "pyproject.toml via identity.version()"
+    )
+
+
+def test_reported_version_matches_pyproject():
+    """A banner that disagrees with the package metadata is a false claim."""
+    import re
+    import sys as _sys
+
+    _sys.path.insert(0, str(PROJECT_ROOT / "src"))
+    from clarapane import identity
+
+    pyproject = (PROJECT_ROOT / "pyproject.toml").read_text()
+    expected = re.search(r'^version\s*=\s*"([^"]+)"', pyproject, re.M).group(1)
+    assert identity.version() == expected, (
+        f"version()={identity.version()!r} but pyproject says {expected!r}"
+    )
+    assert expected in identity.banner()
+
+
+def test_version_does_not_require_an_installed_distribution():
+    """This project runs from the tree via PYTHONPATH=src, not pip-installed.
+
+    `importlib.metadata.version()` raises PackageNotFoundError in that state, so a
+    version reader that depends on it fails exactly where it matters most.
+    """
+    import subprocess
+
+    out = subprocess.run(
+        [sys.executable, "-c",
+         "import sys; sys.path.insert(0, 'src');"
+         "from clarapane import identity; print(identity.version())"],
+        cwd=PROJECT_ROOT, capture_output=True, text=True,
+    )
+    assert out.returncode == 0, out.stderr
+    assert out.stdout.strip() and "unknown" not in out.stdout
+
+
+# ------------------------------------------------------------ documentation drift
+
+
+def test_documentation_matches_the_code():
+    """Docs that disagree with code are a false claim, so they fail the suite.
+
+    This is the check that would have caught the drift measured before it existed:
+    docs/BACKLOG.md listing a stale subset of the backlog, and identity.banner()
+    hardcoding a version that pyproject.toml also declared.
+    """
+    import check_docs
+
+    findings: list[check_docs.Finding] = []
+    for check in check_docs.CHECKS:
+        findings.extend(check())
+    assert not findings, "documentation drift:\n" + "\n".join(f"  - {f}" for f in findings)
+
+
+def test_every_documentation_check_can_fail():
+    """A check that has only ever passed proves nothing.
+
+    The repo learned this three times during the AOP research, where a gate read
+    total infrastructure failure as a clean negative result. Each check is exercised
+    against a deliberately broken copy and must report a finding.
+    """
+    import check_docs
+
+    original = check_docs.PROJECT_ROOT
+    try:
+        def run(mutate_name: str, mutate, check) -> bool:
+            tmp = Path(__import__("tempfile").mkdtemp())
+            for rel in ("README.md", "Makefile", "pyproject.toml", "CHANGELOG.md",
+                        "backlog.json", "docs/BACKLOG.md",
+                        "src/clarapane/identity.py"):
+                src = original / rel
+                if src.exists():
+                    (tmp / rel).parent.mkdir(parents=True, exist_ok=True)
+                    (tmp / rel).write_text(src.read_text())
+            target = tmp / mutate_name
+            target.write_text(mutate(target.read_text()))
+            check_docs.PROJECT_ROOT = tmp
+            return bool(check())
+
+        assert run("README.md", lambda t: t, check_docs.check_readme_exists) is False
+        assert run("README.md", lambda t: t.replace("| `exec` |", "| `nope` |"),
+                   check_docs.check_profile_table)
+        assert run("README.md", lambda t: t.replace("divergence", ""),
+                   check_docs.check_event_list)
+        assert run("Makefile", lambda t: t.replace("\neval:", "\nremoved:"),
+                   check_docs.check_make_targets)
+        assert run("docs/BACKLOG.md",
+                   lambda t: t.replace("authoritative", "a list").replace(
+                       "make backlog", "the cli"),
+                   check_docs.check_backlog_ids)
+        assert run("src/clarapane/identity.py",
+                   lambda t: t.replace('version: str | None = None',
+                                       'version: str = "0.1.0"'),
+                   check_docs.check_version_single_source)
+    finally:
+        check_docs.PROJECT_ROOT = original
