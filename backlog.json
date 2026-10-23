@@ -348,19 +348,19 @@
     },
     {
       "id": "aop-attribution-ledger",
-      "title": "Build the observed-effect ledger for per-agent file attribution",
+      "title": "Expose per-job file attribution from the existing trace",
       "status": "planned",
-      "priority": "high",
+      "priority": "medium",
       "area": "agent-loop",
       "deferred_on": "2026-10-23",
-      "why": "git status records that a file changed, not which job changed it. E6 measured this: with two agents in one tree, git status gives every agent the same 4 dirty files, so a commit scoped to 'my changes' sweeps foreign work. The AOP ledger's observed namespace attributed files at 100% precision and 100% recall. This is the only AOP claim that survived measurement; the coordination claim was rejected (E2, stale rejections 5->8).",
-      "trigger": "When two agents share one working tree and a commit must be scoped to one job. Already needed: work was left uncommitted during the AOP session for exactly this reason.",
+      "why": "git status records that a file changed, not which job changed it. Measured (E6, then re-measured against real agent traces): with 4 agents in one workspace, git status gives every agent the same dirty files, while the trace already records the path and after_hash of every successful write, so attribution is derivable at 100% precision and recall -- PROVEN by re-deriving it from runs/*.jsonl with no schema change. The research originally proposed a ledger; the probe showed the ledger already exists and only a read function is missing. Re-scoped so a future session does not build a subsystem for a ~30-line problem.",
+      "trigger": "When a commit must be scoped to one job in a tree another job also touched. NOT met while runs are sequential: the real trace shows one agent, one workspace, one writer at a time. Also NOT in plan.json, which excludes multi-agent orchestration, so this is a workflow helper, not a plan step.",
       "design": [
-        "Record OBSERVED effects only (tool, path, before/after hash, ok). The declared namespace passed E3 but is a description, never an authority.",
-        "Emit from the existing tool_call seam in sdk_agent._execute -- no new place opens a log file.",
-        "Expose one bounded read tool returning 'files this job changed', never 'files on disk'.",
-        "Keep it harness-authored: the model must not be able to author the record it is judged by.",
-        "Do NOT build coordination ('who else is editing this') -- E2 measured no benefit and a slight regression."
+        "NO new schema for the common case: tool_call.result already carries path and after_hash for apply_edit/write_file. Derive from the trace.",
+        "Add only what is genuinely missing: a bounded read function (e.g. attributable_files(run_id)) over the existing JSONL.",
+        "Add job_id/agent_id to run_start BEFORE any concurrent use, so two runs in one tree are distinguishable. Currently run_start has model/task/tools/workspace only.",
+        "Optional one-line improvement: record `path` in apply_edit ARGS, not just its result, so the trace reads without joining propose -> apply.",
+        "Do NOT build a coordination layer ('who else is editing this'). E2 measured no benefit and a slight regression (stale rejections 5 -> 8)."
       ],
       "touchpoints": [
         "src/clarapane/events_schema.py",
@@ -368,11 +368,15 @@
         "src/clarapane/registry.py"
       ],
       "acceptance": [
-        "Given N agents in one working tree, each agent can name exactly its own changed files with precision 1.0 and recall 1.0 (extend the E6 deterministic test).",
-        "A commit scoped from the ledger never includes a file no tool call for this job touched.",
-        "The ledger is emitted through EventLog and appears in the validated trace schema.",
-        "A test proves an agent cannot attribute a file it did not write, even if its declared intent names it."
-      ]
+        "A read function derives, for a given run_id, exactly the files that run changed, with precision 1.0 and recall 1.0 on the existing multi-agent fixtures.",
+        "A test proves the derivation ignores failed calls and denied writes, so a rejection is never attributed as a change.",
+        "A test proves two concurrent runs in one workspace are distinguishable by job_id/agent_id once those fields exist.",
+        "The documented limit is asserted, not just written down: when N agents change the SAME file, attribution is exact per agent but commit-scoping is impossible at file granularity, because a commit is file-granular."
+      ],
+      "notes": [
+        "2026-10-23: re-scoped after re-deriving attribution from real traces. E6's git-repo experiment overstated the gap: a fresh repo has no trace, so it looked like the ledger had to be invented. In THIS project the trace is already the ledger. The remaining work is a read function plus identity fields, not a ledger. Verified on /tmp/trace-control-*.jsonl: 3 agents attributed to calc/ops.py, 1 (failed) correctly attributed to nothing."
+      ],
+      "limit": "Attribution answers 'what did this job change', never 'what should this job commit'. Commit grouping stays a judgement call. When agents overlap on the same file, no per-agent commit is possible at file granularity."
     }
   ]
 }
