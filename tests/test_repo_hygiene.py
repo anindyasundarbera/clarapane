@@ -682,3 +682,59 @@ def test_every_documentation_check_can_fail():
                    check_docs.check_version_single_source)
     finally:
         check_docs.PROJECT_ROOT = original
+
+
+def test_setup_guide_check_can_fail():
+    """The migration guide must be verified like any other claim.
+
+    docs/SETUP.md documents what is NOT in git -- credentials, local git config, CI
+    secrets -- so nothing fails when it is wrong. Each mutation below must trip the
+    check it targets. An earlier version of this control passed for the wrong reason:
+    the temp copy lacked `scripts/`, so every case tripped one unrelated check. A
+    control that cannot distinguish its own causes is not a control.
+    """
+    import shutil
+    import tempfile
+
+    import check_docs
+
+    original = check_docs.PROJECT_ROOT
+
+    def findings_for(mutate) -> list:
+        tmp = Path(tempfile.mkdtemp())
+        for rel in ("README.md", "Makefile", "pyproject.toml", "CHANGELOG.md",
+                    "backlog.json", "docs/BACKLOG.md", "docs/SETUP.md", ".env.example",
+                    ".github/workflows/ci.yml", "src/clarapane/identity.py"):
+            src = original / rel
+            if src.exists():
+                (tmp / rel).parent.mkdir(parents=True, exist_ok=True)
+                (tmp / rel).write_text(src.read_text())
+        shutil.copytree(original / "scripts", tmp / "scripts")
+        shutil.copytree(original / ".githooks", tmp / ".githooks")
+        target = tmp / "docs" / "SETUP.md"
+        target.write_text(mutate(target.read_text()))
+        check_docs.PROJECT_ROOT = tmp
+        try:
+            return check_docs.check_setup_document_matches_code()
+        finally:
+            check_docs.PROJECT_ROOT = original
+
+    try:
+        assert not findings_for(lambda t: t), "the real guide reports drift"
+
+        cases = [
+            (lambda t: t.replace("| `OPENAI_API_KEY` |", "| `MADE_UP_KEY` |"), "env keys"),
+            (lambda t: t.replace("scripts/check_docs.py", "scripts/nope.py", 1), "does not exist"),
+            (lambda t: t.replace("`commit-msg`, `pre-commit`, `pre-push`", "(hooks)")
+                       .replace("enable commit-msg, pre-commit, pre-push", "enable hooks")
+                       .replace("commit-msg", "X1").replace("pre-commit", "X2"),
+             "never mentions"),
+            (lambda t: t.replace(">= 3.11", ">= 2.7"), "Python floor"),
+        ]
+        for mutate, expected in cases:
+            found = findings_for(mutate)
+            assert any(expected in f.problem for f in found), (
+                f"mutation expecting {expected!r} was not detected: {found}"
+            )
+    finally:
+        check_docs.PROJECT_ROOT = original

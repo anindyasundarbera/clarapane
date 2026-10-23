@@ -50,6 +50,20 @@ def _read(path: Path) -> str:
 
 
 # --------------------------------------------------------------------- checks
+def _declared_env_keys() -> set[str]:
+    """Every key `.env.example` declares, including deliberately commented-out ones.
+
+    Optional keys are documented by commenting them out (`# CLARAPANE_APP_NAME=...`),
+    so a checker that only reads active `KEY=` lines reports them as undeclared and
+    produces a false positive. A false positive is worse than a miss here: it trains
+    the reader to ignore the check.
+    """
+    example = _read(PROJECT_ROOT / ".env.example")
+    active = set(re.findall(r"^([A-Z_]+)=", example, re.M))
+    optional = set(re.findall(r"^#\s*([A-Z_]+)=", example, re.M))
+    return active | optional
+
+
 def check_readme_exists() -> list[Finding]:
     """A repository with no entry point is documented only for its author."""
     if not (PROJECT_ROOT / "README.md").exists():
@@ -201,6 +215,62 @@ def check_version_single_source() -> list[Finding]:
     return out
 
 
+def check_setup_document_matches_code() -> list[Finding]:
+    """docs/SETUP.md is the migration guide, so a wrong step is worse than no step.
+
+    It documents things that are deliberately NOT in git -- credentials, local git
+    config, CI secrets -- which makes it the document most likely to rot silently,
+    because nothing fails when it is wrong. It is checked like any other claim.
+    """
+    setup = _read(PROJECT_ROOT / "docs" / "SETUP.md")
+    if not setup:
+        return [Finding("docs/SETUP.md", "missing -- migration steps are unrecorded")]
+
+    out: list[Finding] = []
+
+    documented = set(re.findall(r"^\| `([A-Z_]+)` \|", setup, re.M))
+    undeclared = documented - _declared_env_keys()
+    if undeclared:
+        out.append(Finding(
+            "docs/SETUP.md",
+            f"documents env keys that .env.example does not declare: {sorted(undeclared)}",
+        ))
+
+    # Verify in the direction that catches a gap: every real hook must be mentioned.
+    # Scraping names out of the prose only catches typos, and misses a hook that was
+    # added to the repository and never documented.
+    hook_dir = PROJECT_ROOT / ".githooks"
+    if hook_dir.exists():
+        for hook in sorted(p.name for p in hook_dir.iterdir() if p.is_file()):
+            if hook not in setup:
+                out.append(Finding(
+                    "docs/SETUP.md",
+                    f"hook {hook!r} exists but the setup guide never mentions it",
+                ))
+
+    for script in set(re.findall(r"scripts/([a-z_]+\.py)", setup)):
+        if not (PROJECT_ROOT / "scripts" / script).exists():
+            out.append(Finding("docs/SETUP.md", f"invokes scripts/{script} which does not exist"))
+
+    workflow = _read(PROJECT_ROOT / ".github" / "workflows" / "ci.yml")
+    # Search the whole guide, not only the env-key table: the `gh secret set` block is
+    # where a reader is actually told to create them, and requiring the table alone
+    # would report a documented secret as missing.
+    for secret in set(re.findall(r"secrets\.([A-Z_]+)", workflow)):
+        if secret not in setup:
+            out.append(Finding(
+                "docs/SETUP.md", f"CI uses secret {secret} but the setup guide omits it"
+            ))
+
+    pyproject = _read(PROJECT_ROOT / "pyproject.toml")
+    match = re.search(r'requires-python\s*=\s*">=([\d.]+)"', pyproject)
+    if match and f">= {match.group(1)}" not in setup:
+        out.append(Finding(
+            "docs/SETUP.md", f"does not state the Python floor >= {match.group(1)}"
+        ))
+    return out
+
+
 def check_agent_facing_reference_is_bounded() -> list[Finding]:
     """An agent reading a full reference would blow its context.
 
@@ -226,6 +296,7 @@ CHECKS = (
     check_make_targets,
     check_backlog_ids,
     check_version_single_source,
+    check_setup_document_matches_code,
     check_agent_facing_reference_is_bounded,
 )
 

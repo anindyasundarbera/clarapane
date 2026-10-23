@@ -52,6 +52,10 @@ make audit     # the defect audit alone
 
 ### Environment
 
+Setting up a new machine, or migrating devices? See **[docs/SETUP.md](docs/SETUP.md)** —
+it lists everything that is deliberately **not** in git: credentials, local git config,
+and CI secrets.
+
 | Key | Purpose |
 |---|---|
 | `OPENAI_BASE_URL` | Any OpenAI-compatible endpoint (verified: `https://ollama.com/v1`) |
