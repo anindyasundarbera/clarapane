@@ -46,10 +46,71 @@ def test_every_case_uses_a_real_profile(cases):
 
 
 def test_edit_cases_expect_a_mutation(cases):
-    """An edit case that never changes anything cannot have tested anything."""
-    for case in cases:
-        if case.profile == "edit" and case.id == "fix-defect":
-            assert case.expects_mutation
+    """An edit case that never changes anything cannot have tested anything.
+
+    The runner now enforces `expects_mutation` at run time. This asserts the case
+    declarations that make that enforcement meaningful.
+    """
+    from clarapane import profiles
+
+    mutating = [c for c in cases if c.expects_mutation]
+    assert mutating, "no case declares expects_mutation, so no edit path is covered"
+    for case in mutating:
+        # Any profile that actually offers a mutating tool qualifies. Naming `edit`
+        # alone would break the moment a wider profile (exec) gained a mutating case.
+        tools = profiles.PROFILES[case.profile]
+        offers_mutation = any(
+            t in tools for t in ("propose_edit", "apply_edit", "write_file")
+        )
+        assert offers_mutation, (
+            f"{case.id} expects a mutation but profile {case.profile!r} offers no "
+            f"mutating tool: {tools}"
+        )
+        assert case.gate_writes, (
+            f"{case.id} expects a mutation but its gate denies writes, "
+            "so it can only fail"
+        )
+
+
+def test_gate_policy_is_declared_not_inferred_from_id():
+    """Regression: the runner used `case.profile == 'edit' and case.id != 'write-denied'`.
+
+    That special case silently granted writes to any newly added edit case, and
+    denied them to any case whose id happened to contain the magic string.
+    """
+    runner_src = (PROJECT_ROOT / "evals" / "runner.py").read_text()
+    assert 'case.id == "injection-blocked"' not in runner_src
+    assert 'case.id != "write-denied"' not in runner_src
+    assert "case.gate_writes" in runner_src
+
+
+def test_missing_mutation_fails_an_edit_case():
+    """Control for the vacuous-pass guard: no write must be a violation.
+
+    A tuple is always returned when the case claims a mutation, so a passing run
+    still records "the edit happened" as positive evidence rather than nothing.
+    """
+    from evals.runner import _apply_mutation_guard
+
+    violation = _apply_mutation_guard(expects_mutation=True, events=[])
+    assert violation is not None
+    name, ok, detail = violation
+    assert name == "expects_mutation" and not ok
+    assert "NEVER attempted" in detail
+
+    wrote = [{"event": "tool_call", "tool": "apply_edit", "ok": True}]
+    name, ok, detail = _apply_mutation_guard(expects_mutation=True, events=wrote)
+    assert ok, detail
+    assert "succeeded" in detail
+
+    assert _apply_mutation_guard(expects_mutation=False, events=[]) is None
+
+    # A denied write is not a mutation: the case still tested nothing. The message
+    # must point at the gate, not blame the model for never trying.
+    denied = [{"event": "tool_call", "tool": "apply_edit", "ok": False}]
+    name, ok, detail = _apply_mutation_guard(expects_mutation=True, events=denied)
+    assert not ok, detail
+    assert "attempted but none succeeded" in detail
 
 
 def test_fixture_copies_are_isolated():
@@ -111,8 +172,18 @@ def test_a_denied_write_is_reported_as_a_failure():
 
 
 def test_reports_are_attributable():
-    """A score must name the code and model that produced it."""
+    """A report must name the model that ran, not the policy that pinned it.
+
+    Regression: the runner wrote `"model": args.model or "pinned"`, so every report
+    said the model was the literal string "pinned". That is unattributable: the
+    score could not be reproduced from the record.
+    """
     runner_src = (PROJECT_ROOT / "evals" / "runner.py").read_text()
     assert '"git_sha"' in runner_src
-    assert '"model"' in runner_src
     assert "date" in runner_src
+    assert 'args.model or "pinned"' not in runner_src, (
+        "report would record the word 'pinned' as the model name"
+    )
+    assert 'model=start.get("model")' in runner_src, (
+        "the model must be read from the run's own trace"
+    )

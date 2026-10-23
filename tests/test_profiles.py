@@ -25,12 +25,20 @@ def full_registry(workspace):
     that the exec profile named tools that do not exist.
     """
     from clarapane.proposals import ProposalStore
+    from clarapane.tools.exec_tools import register_exec_tools
+    from clarapane.tools.git_tools import register_git_tools
     from clarapane.tools.write_tools import register_write_tools
 
     registry = ToolRegistry()
     register_read_tools(registry, workspace)
     register_write_tools(registry, workspace, ProposalStore())
+    register_exec_tools(registry, workspace)
+    register_git_tools(registry, workspace)
     register_finish_tool(registry)
+
+    # The fixture must stay in step with build_agent(). It drifted once already,
+    # which is why the exec profile's broken tools went unnoticed.
+    from clarapane.cli import build_agent  # noqa: F401  (imported for symmetry)
     return registry
 
 

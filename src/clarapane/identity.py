@@ -22,6 +22,7 @@ or policy. Keeping identity separate from behaviour is what makes it safe to var
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
 DEFAULT_APP_NAME = "Clarapane"
 ENV_VAR = "CLARAPANE_APP_NAME"
@@ -73,6 +74,53 @@ def app_tag(explicit: str | None = None) -> str:
     return slug or DEFAULT_TAG
 
 
-def banner(explicit: str | None = None, *, version: str = "0.1.0") -> str:
-    """One-line identity string for the CLI."""
-    return f"{app_name(explicit)} v{version} -- a glass-box coding agent"
+# The version, resolved without assuming the package was pip-installed.
+#
+# Why not `importlib.metadata.version("clarapane")`: this project runs from the tree
+# via `PYTHONPATH=src` and is not installed as a distribution, so that call raises
+# PackageNotFoundError. A version that only works after `pip install -e .` is a
+# version that is missing exactly in the situation that matters most -- a fresh clone.
+#
+# Resolution order (first non-empty wins):
+#   1. the installed distribution metadata, when the package *is* installed
+#   2. the nearest pyproject.toml, walking up from this file
+#   3. "0+unknown" -- explicit rather than a plausible-looking lie
+DEFAULT_VERSION = "0+unknown"
+
+
+def version() -> str:
+    """The single source of truth is pyproject.toml; this only reads it."""
+    try:
+        from importlib.metadata import PackageNotFoundError, version as _dist_version
+
+        try:
+            return _dist_version("clarapane")
+        except PackageNotFoundError:
+            pass
+    except Exception:  # noqa: BLE001 - metadata lookup must never break a run
+        pass
+
+    for parent in Path(__file__).resolve().parents:
+        candidate = parent / "pyproject.toml"
+        if not candidate.exists():
+            continue
+        for line in candidate.read_text().splitlines():
+            stripped = line.strip()
+            if stripped.startswith("version") and "=" in stripped:
+                value = stripped.split("=", 1)[1].strip().strip('"').strip("'")
+                if value:
+                    return value
+        break
+    return DEFAULT_VERSION
+
+
+def banner(explicit: str | None = None, *, version: str | None = None) -> str:
+    """One-line identity string for the CLI.
+
+    `version` is an optional override for tests; the default is read from the single
+    source of truth rather than duplicated here, so the banner cannot drift from
+    pyproject.toml.
+    """
+    resolved = version if version is not None else globals()["version"]()
+    return f"{app_name(explicit)} v{resolved} -- a glass-box coding agent"
+

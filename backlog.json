@@ -308,6 +308,75 @@
         "Runs are hermetic: no case mutates the committed sandbox, and cases can run in any order.",
         "Total runtime under two minutes against a live model."
       ]
+    },
+    {
+      "id": "aop-coordination-research",
+      "title": "Research whether a shared intent ledger measurably helps concurrent agents",
+      "status": "done",
+      "priority": "medium",
+      "area": "research",
+      "deferred_on": "2026-10-23",
+      "why": "The agent can see files but not other agents' declared intent or observed effect over the same paths. That gap is real but unmeasured: the eval harness scores 5/5 and every case is single-agent, and the committed trace contains zero coordination conflicts in 113 tool calls. Building a protocol before producing a failure it prevents would violate plan.json's rule that only measurement justifies capability.",
+      "trigger": "Start when the user approves the research phase; run E3 (intent fidelity) before E2 (concurrency). Blocks on the mandate gate in the research plan.",
+      "design": [
+        "Two namespaces, never merged: `declared` (agent-authored, untrusted) and `observed` (harness-authored, derived from real events). A consumer may act only on their intersection.",
+        "Ledger lives outside every checkout, at <git-common-dir>/aop/, because sibling worktrees share the common dir but not runs/ (probed).",
+        "Hash-bound optimism, no locking: reuse Proposal.before_hash + verify_unchanged instead of adding a lock manager.",
+        "One read tool, bounded output, added at run start and never mid-run, because capability profiles are fixed per run for provider cache reasons.",
+        "Reasoning traces are NOT published by default. A shared ledger is tool output for the next agent, so it is a new injection channel with higher implied trust.",
+        "E0 extends evals/runner.py: real git fixture (the copied sandbox has no .git, so worktree add fails), a multi-agent scenario runner, and set-level concurrency assertions.",
+        "E3 (intent fidelity) runs before E1/E2: it is cheapest and can invalidate the declared namespace on its own."
+      ],
+      "touchpoints": [
+        "evals/runner.py",
+        "evals/cases.py",
+        "src/clarapane/events_schema.py",
+        "docs/research/"
+      ],
+      "acceptance": [
+        "A concurrency fixture exists that FAILS on HEAD with no ledger; the failing run is recorded as the mandate. [DONE: 1 stale rejection]",
+        "E3 reports declared-vs-observed agreement; >20% contradicted means the declared namespace ships disabled. [DONE: 0% contradicted]",
+        "E2 compares control vs ledger arms with matched model, sha, and step cap, and both reports name the model that actually ran. [DONE: REJECTED, 5->8 stale]",
+        "Every new eval case declares gate_writes and plant_injection rather than relying on case.id. [DONE]",
+        "If the fixture cannot produce a conflict, the item is closed as 'not mandated' with that evidence rather than reopened. [N/A: fixture produced the failure]"
+      ],
+      "notes": [
+        "2026-10-23: deferred pending explicit user approval of the research phase; see the research plan for the full gap register.",
+        "2026-10-23: research complete. E2 REJECTED the coordination claim (stale rejections 5->8). E3 PASSED (0% contradicted intent). E6 PASSED (100% precision/recall per-agent file attribution). Verdict: build attribution, not coordination. See docs/evidence/aop-decision-2026-10-23.md"
+      ],
+      "resolved_on": "2026-10-23"
+    },
+    {
+      "id": "aop-attribution-ledger",
+      "title": "Expose per-job file attribution from the existing trace",
+      "status": "planned",
+      "priority": "medium",
+      "area": "agent-loop",
+      "deferred_on": "2026-10-23",
+      "why": "git status records that a file changed, not which job changed it. Measured (E6, then re-measured against real agent traces): with 4 agents in one workspace, git status gives every agent the same dirty files, while the trace already records the path and after_hash of every successful write, so attribution is derivable at 100% precision and recall -- PROVEN by re-deriving it from runs/*.jsonl with no schema change. The research originally proposed a ledger; the probe showed the ledger already exists and only a read function is missing. Re-scoped so a future session does not build a subsystem for a ~30-line problem.",
+      "trigger": "When a commit must be scoped to one job in a tree another job also touched. NOT met while runs are sequential: the real trace shows one agent, one workspace, one writer at a time. Also NOT in plan.json, which excludes multi-agent orchestration, so this is a workflow helper, not a plan step.",
+      "design": [
+        "NO new schema for the common case: tool_call.result already carries path and after_hash for apply_edit/write_file. Derive from the trace.",
+        "Add only what is genuinely missing: a bounded read function (e.g. attributable_files(run_id)) over the existing JSONL.",
+        "Add job_id/agent_id to run_start BEFORE any concurrent use, so two runs in one tree are distinguishable. Currently run_start has model/task/tools/workspace only.",
+        "Optional one-line improvement: record `path` in apply_edit ARGS, not just its result, so the trace reads without joining propose -> apply.",
+        "Do NOT build a coordination layer ('who else is editing this'). E2 measured no benefit and a slight regression (stale rejections 5 -> 8)."
+      ],
+      "touchpoints": [
+        "src/clarapane/events_schema.py",
+        "src/clarapane/sdk_agent.py",
+        "src/clarapane/registry.py"
+      ],
+      "acceptance": [
+        "A read function derives, for a given run_id, exactly the files that run changed, with precision 1.0 and recall 1.0 on the existing multi-agent fixtures.",
+        "A test proves the derivation ignores failed calls and denied writes, so a rejection is never attributed as a change.",
+        "A test proves two concurrent runs in one workspace are distinguishable by job_id/agent_id once those fields exist.",
+        "The documented limit is asserted, not just written down: when N agents change the SAME file, attribution is exact per agent but commit-scoping is impossible at file granularity, because a commit is file-granular."
+      ],
+      "notes": [
+        "2026-10-23: re-scoped after re-deriving attribution from real traces. E6's git-repo experiment overstated the gap: a fresh repo has no trace, so it looked like the ledger had to be invented. In THIS project the trace is already the ledger. The remaining work is a read function plus identity fields, not a ledger. Verified on /tmp/trace-control-*.jsonl: 3 agents attributed to calc/ops.py, 1 (failed) correctly attributed to nothing."
+      ],
+      "limit": "Attribution answers 'what did this job change', never 'what should this job commit'. Commit grouping stays a judgement call. When agents overlap on the same file, no per-agent commit is possible at file granularity."
     }
   ]
 }

@@ -25,6 +25,29 @@ from openai import OpenAI
 from openai.types.chat import ChatCompletionMessage, ChatCompletionMessageToolCall
 
 
+# Backward compatibility for the OpenAI-shaped names.
+#
+# Why the rename: those names describe the SDK, not the provider. This project talks
+# to any OpenAI-COMPATIBLE endpoint -- Ollama today -- and an `OPENAI_API_KEY` that
+# actually holds an Ollama key is a lie that costs a confusing minute on every new
+# machine. The canonical names are provider-agnostic; the old ones remain readable so
+# an existing .env keeps working.
+_ENV_ALIASES: dict[str, tuple[str, ...]] = {
+    "PROVIDER_BASE_URL": ("PROVIDER_BASE_URL", "OPENAI_BASE_URL"),
+    "PROVIDER_API_KEY": ("PROVIDER_API_KEY", "OPENAI_API_KEY"),
+    "PROVIDER_MODEL": ("PROVIDER_MODEL", "DEFAULT_OLLAMA_MODEL"),
+}
+
+
+def _env(canonical: str, legacy: str) -> str | None:
+    """Read the canonical name, then the legacy one, then nothing."""
+    for name in _ENV_ALIASES.get(canonical, (canonical, legacy)):
+        value = os.environ.get(name)
+        if value and value.strip():
+            return value.strip()
+    return None
+
+
 @dataclass(frozen=True)
 class ModelInfo:
     """A model advertised by the provider, with the capabilities we care about."""
@@ -76,13 +99,20 @@ class Provider:
         env_path: str = ".env",
     ) -> None:
         load_dotenv(env_path, override=True)
-        self.base_url = base_url or os.environ.get("OPENAI_BASE_URL")
-        self.default_model = default_model or os.environ.get("DEFAULT_OLLAMA_MODEL")
-        key = api_key or os.environ.get("OPENAI_API_KEY")
+        self.base_url = base_url or _env("PROVIDER_BASE_URL", "OPENAI_BASE_URL")
+        self.default_model = default_model or _env("PROVIDER_MODEL", "DEFAULT_OLLAMA_MODEL")
+        key = api_key or _env("PROVIDER_API_KEY", "OPENAI_API_KEY")
+
+        # One credential, not two. The key used for chat is also the key used to list
+        # models -- they were separate variables before, holding the same secret, which
+        # is a way to make them drift apart silently.
+        self.api_key = key
 
         if not self.base_url or not key:
             raise RuntimeError(
-                "OPENAI_BASE_URL and OPENAI_API_KEY must be set (see .env)"
+                "PROVIDER_BASE_URL and PROVIDER_API_KEY must be set (see .env). "
+                "The legacy names OPENAI_BASE_URL and OPENAI_API_KEY are still read "
+                "as a fallback."
             )
 
         self._client = OpenAI(base_url=self.base_url, api_key=key)
@@ -160,7 +190,7 @@ class Provider:
 
         url = f"{root}/api/tags"
         req = urllib.request.Request(
-            url, headers={"Authorization": f"Bearer {self._client.api_key}"}
+            url, headers={"Authorization": f"Bearer {self.api_key}"}
         )
         try:
             with urllib.request.urlopen(req, timeout=20) as resp:

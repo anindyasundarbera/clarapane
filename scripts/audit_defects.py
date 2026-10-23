@@ -326,6 +326,56 @@ def check_one_finish_event_per_run(report: Report) -> None:
         report.ok("one-finish-per-run")
 
 
+def check_divergence_taxonomy(report: Report) -> None:
+    """Every trace that records divergence must use a declared class.
+
+    Why this is a defect check and not a metric
+    -------------------------------------------
+    The divergence count is only meaningful if its taxonomy is closed. If an
+    undeclared class could be written, the count would grow into a misc bucket and
+    stop driving action. So an unknown class in a trace is a BLOCKER: either the
+    code is wrong or the taxonomy needs a deliberate decision.
+
+    It also enforces that the emitted `source` matches the ruleset. A trace claiming
+    a class is "model" divergence when the taxonomy says it is "harness" would make
+    our own bugs invisible in the metric.
+    """
+    from clarapane import divergence
+
+    runs = sorted((SRC.parent / "runs").glob("*.jsonl"))
+    if not runs:
+        report.ok("divergence-taxonomy: no trace to check")
+        return
+
+    problems: list[str] = []
+    for path in runs:
+        for line in path.read_text().splitlines():
+            if not line.strip():
+                continue
+            record = json.loads(line)
+            if record.get("event") != "divergence":
+                continue
+            name = record.get("class_")
+            rule = divergence.RULES.get(name)
+            if rule is None:
+                problems.append(f"{path.name}: undeclared class {name!r}")
+                continue
+            if record.get("source") != rule.source:
+                problems.append(
+                    f"{path.name}: {name} recorded as source={record.get('source')!r} "
+                    f"but the taxonomy says {rule.source!r}"
+                )
+
+    if problems:
+        report.add(
+            "BLOCKER", "divergence-taxonomy", "; ".join(problems[:3]),
+            "declare the class in divergence.py with an owner and a remedy, "
+            "or fix the emitting code",
+        )
+    else:
+        report.ok("divergence-taxonomy")
+
+
 def check_plan_integrity(report: Report) -> None:
     """The training plan must exist, be well-formed, and have exactly one active step.
 
@@ -567,6 +617,7 @@ def check_all() -> Report:
         check_approval_binding,
         check_no_direct_main_commits,
         check_plan_integrity,
+        check_divergence_taxonomy,
     ):
         check(report)
     return report

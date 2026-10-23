@@ -18,6 +18,7 @@ from typing import Any
 
 from . import gate as gate_mod
 from . import identity, safety
+from .divergence import record as record_divergence
 from .events import EventLog
 from .policy import PolicyError, Workspace
 from .provider import Completion, Provider
@@ -139,6 +140,9 @@ class Agent:
                     )
 
                 self.log.emit("stall", step=index, content=completion.content)
+                self.diverged(index, "stall",
+                              expected="model calls finish",
+                              observed=f"prose reply: {(completion.content or '')[:160]}")
                 # A run must have exactly one terminal event, whatever the exit.
                 # Missing this made 1 of 4 historical runs look unfinished.
                 self.log.emit("run_end", reason="stall", steps=len(steps))
@@ -178,6 +182,9 @@ class Agent:
                     reason=reason,
                 )
 
+        self.diverged(self.max_steps, "step_cap",
+                      expected=f"task completes within {self.max_steps} steps",
+                      observed=f"stopped after {len(steps)} completed step(s)")
         self.log.emit("run_end", reason="step_cap", steps=len(steps))
         return AgentResult(
             finished=False,
@@ -269,7 +276,8 @@ class Agent:
 
         args, parse_error = self._parse_args(call.function.arguments)
         if parse_error:
-            return self._fail(call, index, name, parse_error, started, messages)
+            return self._fail(call, index, name, parse_error, started, messages,
+                              divergence="args_malformed")
 
         if name == "finish":
             # The loop emits the `finish` event, not this method: `verified` depends
@@ -282,7 +290,8 @@ class Agent:
         try:
             spec = self.registry.get(name)
         except ToolError as exc:
-            return self._fail(call, index, name, str(exc), started, messages)
+            return self._fail(call, index, name, str(exc), started, messages,
+                              divergence="tool_unknown")
 
         # The gate lives in the harness, between lookup and execution. A tool
         # cannot decide whether it was approved.
@@ -299,6 +308,7 @@ class Agent:
                     call, index, name,
                     f"denied ({decision.actor}): {decision.reason}",
                     started, messages, spec=spec,
+                    divergence="approval_denied",
                 )
 
             # Enforce the binding: an approval authorizes one exact payload. If the
@@ -316,10 +326,18 @@ class Agent:
         try:
             result = spec.handler(**args)
         except (ToolError, PolicyError) as exc:
-            return self._fail(call, index, name, str(exc), started, messages, spec=spec)
+            message = str(exc)
+            # A stale proposal is the compare-and-swap guard doing its job. It is
+            # classified separately because it is the only failure where the agent's
+            # intervening work was provably wasted -- the quantity this repo's
+            # coordination research measures.
+            kind = "proposal_stale" if "changed after the proposal" in message else "tool_error"
+            return self._fail(call, index, name, message, started, messages,
+                              spec=spec, divergence=kind)
         except TypeError as exc:
             # Wrong/missing arguments -- a model mistake, not a crash.
-            return self._fail(call, index, name, f"bad arguments: {exc}", started, messages, spec=spec)
+            return self._fail(call, index, name, f"bad arguments: {exc}", started,
+                              messages, spec=spec, divergence="args_malformed")
         except Exception as exc:  # noqa: BLE001 - unexpected tool crash must not kill the run
             return self._fail(call, index, name, f"{type(exc).__name__}: {exc}", started,
                               messages, spec=spec)
@@ -358,18 +376,32 @@ class Agent:
         messages: list[dict[str, Any]],
         *,
         spec: ToolSpec | None = None,
+        divergence: str | None = None,
     ) -> tuple[Step, None]:
-        """Record a failed call and hand the error back to the model to recover from."""
+        """Record a failed call and hand the error back to the model to recover from.
+
+        Every failure is also a divergence: the harness predicted the call would
+        work and it did not. Recording it here -- at the single point where failures
+        are constructed -- is what makes the count complete rather than sampled.
+        """
         duration = int((time.perf_counter() - started) * 1000)
         payload = {"error": message}
         self.log.emit("tool_call", step=index, tool=name,
                       risk=spec.risk if spec else "unknown",
                       ok=False, error=message, duration_ms=duration)
+        if divergence:
+            self.diverged(index, divergence,
+                          expected=f"{name} succeeds", observed=message[:200])
         messages.append(self._tool_message(call.id, payload))
         if self.verbose:
             print(f"  [err  ] {name}: {message}")
         return Step(index=index, tool_name=name, tool_args=None, tool_ok=False,
                     error=message, duration_ms=duration), None
+
+    def diverged(self, step: int, class_: str, *, expected: str, observed: str) -> None:
+        """Emit one recorded divergence. Unknown classes raise, by design."""
+        self.log.emit("divergence", **record_divergence(
+            step, class_, expected=expected, observed=observed).as_event())
 
     def _is_verified(self, steps: list[Step]) -> bool:
         """Is a `finish` claim backed by evidence?
@@ -467,6 +499,9 @@ class Agent:
             verified=verified,
             original_content=completion.content,
         )
+        self.diverged(index, "finish_recovered",
+                      expected="model calls finish directly",
+                      observed=f"prose answer coerced; verified={verified}")
         return step, call.id, verified
 
     def _risk_of(self, tool_name: str) -> str:

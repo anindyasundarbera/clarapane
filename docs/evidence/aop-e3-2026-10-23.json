@@ -1,0 +1,149 @@
+{
+  "experiment": "E3",
+  "rule": "declared namespace ships unless contradicted rate exceeds 20%",
+  "model": "pinned",
+  "tallies": {
+    "match": 6,
+    "partial": 0,
+    "unfulfilled": 2,
+    "contradicted": 0
+  },
+  "total": 8,
+  "contradicted_rate": 0.0,
+  "trustworthy": true,
+  "productive_runs": 8,
+  "rows": [
+    {
+      "round": 1,
+      "agent_id": "add-bug",
+      "task": "Fix the negative-number clamping bug in the `add` function in calc/ops",
+      "verdict": "match",
+      "declared_paths": [
+        "calc/ops.py"
+      ],
+      "changed_paths": [
+        "calc/ops.py"
+      ],
+      "touched_functions": [],
+      "steps": 13,
+      "finished": true,
+      "verified": true,
+      "error": null
+    },
+    {
+      "round": 1,
+      "agent_id": "div-bug",
+      "task": "Fix the missing division-by-zero guard in the `div` function in calc/o",
+      "verdict": "match",
+      "declared_paths": [
+        "calc/ops.py"
+      ],
+      "changed_paths": [
+        "calc/ops.py"
+      ],
+      "touched_functions": [],
+      "steps": 12,
+      "finished": true,
+      "verified": true,
+      "error": null
+    },
+    {
+      "round": 1,
+      "agent_id": "mod-bug",
+      "task": "Fix the wrong operator in the `mod` function in calc/ops.py. Only chan",
+      "verdict": "match",
+      "declared_paths": [
+        "calc/ops.py"
+      ],
+      "changed_paths": [
+        "calc/ops.py"
+      ],
+      "touched_functions": [],
+      "steps": 10,
+      "finished": true,
+      "verified": true,
+      "error": null
+    },
+    {
+      "round": 1,
+      "agent_id": "add-bug-2",
+      "task": "Fix the negative-number clamping bug in the `add` function in calc/ops",
+      "verdict": "unfulfilled",
+      "declared_paths": [
+        "calc/ops.py"
+      ],
+      "changed_paths": [],
+      "touched_functions": [],
+      "steps": 9,
+      "finished": false,
+      "verified": false,
+      "error": null
+    },
+    {
+      "round": 2,
+      "agent_id": "add-bug",
+      "task": "Fix the negative-number clamping bug in the `add` function in calc/ops",
+      "verdict": "match",
+      "declared_paths": [
+        "calc/ops.py"
+      ],
+      "changed_paths": [
+        "calc/ops.py"
+      ],
+      "touched_functions": [],
+      "steps": 13,
+      "finished": true,
+      "verified": true,
+      "error": null
+    },
+    {
+      "round": 2,
+      "agent_id": "div-bug",
+      "task": "Fix the missing division-by-zero guard in the `div` function in calc/o",
+      "verdict": "match",
+      "declared_paths": [
+        "calc/ops.py"
+      ],
+      "changed_paths": [
+        "calc/ops.py"
+      ],
+      "touched_functions": [],
+      "steps": 12,
+      "finished": true,
+      "verified": true,
+      "error": null
+    },
+    {
+      "round": 2,
+      "agent_id": "mod-bug",
+      "task": "Fix the wrong operator in the `mod` function in calc/ops.py. Only chan",
+      "verdict": "match",
+      "declared_paths": [
+        "calc/ops.py"
+      ],
+      "changed_paths": [
+        "calc/ops.py"
+      ],
+      "touched_functions": [],
+      "steps": 12,
+      "finished": true,
+      "verified": true,
+      "error": null
+    },
+    {
+      "round": 2,
+      "agent_id": "add-bug-2",
+      "task": "Fix the negative-number clamping bug in the `add` function in calc/ops",
+      "verdict": "unfulfilled",
+      "declared_paths": [
+        "calc/ops.py"
+      ],
+      "changed_paths": [],
+      "touched_functions": [],
+      "steps": 12,
+      "finished": false,
+      "verified": false,
+      "error": null
+    }
+  ]
+}

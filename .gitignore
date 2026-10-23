@@ -22,3 +22,10 @@ trace.db
 
 # OS noise
 .DS_Store
+
+# Eval outputs: a score is reproducible, not a build artifact.
+evals/latest.json
+eval-traces/
+
+# Research worktrees: isolated experiments, never committed from here.
+.worktrees/

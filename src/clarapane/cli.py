@@ -26,6 +26,8 @@ from .gate import InteractiveGate, PolicyGate
 from .proposals import ProposalStore
 from .tools.finish_tool import register_finish_tool
 from .tools.read_tools import register_read_tools
+from .tools.exec_tools import register_exec_tools
+from .tools.git_tools import register_git_tools
 from .tools.write_tools import register_write_tools
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -74,6 +76,8 @@ def build_agent(
     registry = ToolRegistry()
     register_read_tools(registry, workspace)
     register_write_tools(registry, workspace, ProposalStore(), step_getter=lambda: 0)
+    register_exec_tools(registry, workspace)
+    register_git_tools(registry, workspace)
     register_finish_tool(registry)
 
     chosen: ProfileName = profile or profiles.infer(task)
@@ -93,13 +97,21 @@ def build_agent(
             "profile_source": "cli" if profile else "inferred",
         },
     )
+    # A guessed profile is a harness divergence: it is recorded, not silent. On the
+    # next run the trace answers "was capability guessed?" without reading the code.
+    if profile is None:
+        agent.diverged(
+            0, "profile_inferred",
+            expected="caller declares the capability profile",
+            observed=f"inferred {chosen!r} from task keywords",
+        )
     return agent, log
 
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="Clarapane coding agent (raw SDK)")
     ap.add_argument("task", help="Natural-language task for the agent")
-    ap.add_argument("--model", help="Override DEFAULT_OLLAMA_MODEL")
+    ap.add_argument("--model", help="Override PROVIDER_MODEL")
     ap.add_argument("--workspace", default=str(DEFAULT_WORKSPACE),
                     help="Workspace root the agent is jailed to")
     ap.add_argument("--max-steps", type=int, default=12)

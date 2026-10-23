@@ -37,10 +37,24 @@ grep -rn "TODO(" src/
 
 ## Current items
 
+The table below is a **hand-maintained snapshot and is allowed to be incomplete**.
+The authoritative list is `backlog.json`, because a document that duplicates a
+machine-readable source is a document that drifts — measured: this table was
+missing 7 of 10 items before it was trimmed.
+
+```bash
+make backlog     # the authoritative, always-current list
+```
+
+For the narrative behind selected items — the reasoning, the rejected alternatives,
+and the hook points — see the sections below.
+
 | ID | Status | Area | Priority |
 |---|---|---|---|
+| `aop-attribution-ledger` | planned | agent-loop | medium |
 | `request-capability-escalation` | planned | profiles | high |
-| `stuck-loop-investigation` | planned | agent-loop | medium |
+| `reviewer-agent` | planned | review | high |
+| `structural-outline-tool` | planned | tools | medium |
 | `dynamic-tool-selection` | rejected | profiles | low |
 
 ### `request-capability-escalation` (planned, high)

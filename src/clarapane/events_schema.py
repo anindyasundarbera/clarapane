@@ -117,6 +117,37 @@ class ProviderError(TypedDict, total=False):
     error: Required[str]
 
 
+class Divergence(TypedDict, total=False):
+    """One place the run did not go as the harness predicted.
+
+    Every entry answers the same three questions, so the set is countable:
+
+      * `class_` -- from a CLOSED taxonomy (see divergence.py). A new class is a
+        deliberate decision, not an ad-hoc label.
+      * `source`  -- "harness" (our bug), "model" (its mistake), or "policy"
+        (a gate did its job). Only "harness" is always a defect.
+      * `expected` / `observed` -- what the rule predicted vs what happened, so the
+        record is auditable rather than a bare count.
+
+    Why this is an event and not a log line
+    ---------------------------------------
+    A count is only useful if it is complete. Emitting through the single log
+    writer means "how many divergences did this run have?" is answerable from the
+    trace alone, with no side-channel to lose entries.
+    """
+
+    step: Required[int]
+    class_: Required[str]
+    source: Required[str]
+    expected: Required[str]
+    observed: Required[str]
+    # The rule that made the prediction, so a failure can be traced to a rule and
+    # the rule can be fixed rather than the symptom patched.
+    rule: str
+    # True when this divergence means the harness was WRONG, not the model.
+    defect: bool
+
+
 class ProfileSelected(TypedDict, total=False):
     """LEGACY (pre-2026-10-22): profile info now lives on RunStart.
 
@@ -133,6 +164,7 @@ SCHEMAS: dict[str, type] = {
     "run_start": RunStart,
     "model_call": ModelCall,
     "tool_call": ToolCall,
+    "divergence": Divergence,
     "finish": Finish,
     "stall": Stall,
     "run_end": RunEnd,
