@@ -234,12 +234,33 @@ audit are the controls that travel with the repository.
 
 Honest status, because this project treats an overclaim as a defect:
 
-- The eval suite scores **6/6** on the committed fixture with a pinned model.
-- **No CI exists yet.** Nothing runs on push.
+- **220 tests** pass offline; the eval suite scores **6/6** on the committed fixture
+  with a pinned model (sha `7aa9e5f`, `deepseek-v4.1-flash:cloud`).
+- **CI runs on every push and pull request** (`.github/workflows/ci.yml`). The offline
+  job — tests, defect audit, documentation drift, commit messages, setup template —
+  needs no credentials and is the gate that must always be available. A separate
+  live-model job runs the eval suite and **fails loudly** when `PROVIDER_API_KEY` is
+  missing rather than skipping, because a skipped eval is a green build that tested
+  nothing.
+- The agent **can verify its own edits**: `run_command`, `git_checkpoint` and
+  `git_rollback` exist, and the `fix-and-verify` eval case shows it running `pytest`
+  on its own change. Before those tools existed it could only *claim* success.
 - The package is not published; it runs from the tree via `PYTHONPATH=src`.
+- Evals use one 27-line fixture. That is a smoke test, not a benchmark — see the
+  limits in [`docs/CAPABILITIES.md`](docs/CAPABILITIES.md).
 - An AOP "agent observability" ledger was researched and **mostly rejected**: it did
   not reduce wasted work. Only per-job attribution survived, and it is a read
   function, not a subsystem. See [`docs/evidence/aop-decision-2026-10-23.md`](docs/evidence/aop-decision-2026-10-23.md).
+- **Frameworks are not compared yet.** LangChain and LangGraph are the next plan step,
+  and they will be measured against this baseline rather than ported for their own sake.
+
+Where to read next:
+
+| Document | Answers |
+|---|---|
+| [`docs/INTENT.md`](docs/INTENT.md) | What this is for, and what "done" means |
+| [`docs/CAPABILITIES.md`](docs/CAPABILITIES.md) | What it can and cannot do, each claim tied to a test |
+| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | How it is built, and why each invariant exists |
 
 ## License
 
