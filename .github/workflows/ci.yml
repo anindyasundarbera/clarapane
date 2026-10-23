@@ -1,0 +1,125 @@
+name: CI
+
+# Why this workflow exists
+# -----------------------
+# The local hooks are inert in any clone but the author's: `core.hooksPath` lives in
+# local git config, which is not committed. Probed in a clean clone:
+#
+#     hooksPath in fresh clone: NOT SET
+#     active hooks: 14 samples only
+#
+# So every rule enforced by .githooks is unenforced for every other contributor and
+# for CI itself. This workflow is therefore the only control that travels with the
+# repository, and it must run the SAME commands a human runs. If local and remote can
+# disagree, people learn to distrust both.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Fast, deterministic, no network, no secrets. This is the gate that must always
+  # be available: a contributor with no provider key can still prove their change is
+  # sound.
+  offline:
+    name: tests, audit, docs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Commit-message validation needs history, not a single squashed commit.
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e . pytest
+
+      # Run through the same entry points documented in README and AGENTS.md, so a
+      # green CI means the documented commands work.
+      - name: Test suite (includes the defect audit and the docs check)
+        env:
+          PYTHONPATH: src
+        run: python -m pytest tests -q
+
+      - name: Defect audit (explicit, with output)
+        env:
+          PYTHONPATH: src
+        run: python scripts/audit_defects.py
+
+      - name: Documentation drift
+        env:
+          PYTHONPATH: src
+        run: python scripts/check_docs.py
+
+      - name: Commit messages
+        run: python scripts/check_commits.py
+
+  # The live-model measurement. Kept separate because its failure means something
+  # different: a score below baseline is a capability regression, not broken code.
+  eval:
+    name: eval suite (live model)
+    runs-on: ubuntu-latest
+    needs: offline
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e . pytest
+
+      # A missing key must FAIL LOUDLY, never skip. A skipped eval is a green build
+      # that tested nothing -- the vacuous-result defect this repo already hit three
+      # times during the AOP research.
+      - name: Require credentials
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          if [ -z "$OPENAI_API_KEY" ]; then
+            echo "::error title=Eval cannot run::OPENAI_API_KEY is not configured."
+            echo "This job is red by design: a skipped eval would report success"
+            echo "without measuring anything. Add the secret, or disable this job"
+            echo "deliberately in .github/workflows/ci.yml."
+            exit 1
+          fi
+
+      - name: Run eval suite
+        env:
+          PYTHONPATH: src
+          OPENAI_BASE_URL: ${{ secrets.OPENAI_BASE_URL }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OLLAMA_HOST: ${{ secrets.OLLAMA_HOST }}
+          OLLAMA_API_KEY: ${{ secrets.OLLAMA_API_KEY }}
+          DEFAULT_OLLAMA_MODEL: ${{ secrets.DEFAULT_OLLAMA_MODEL }}
+        run: |
+          python -m evals.runner --json evals/latest.json --trace-dir eval-traces
+
+      # The report is the evidence. Without it a red run cannot be diagnosed and a
+      # green run cannot be compared to the baseline.
+      - name: Upload eval report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-report
+          path: |
+            evals/latest.json
+            eval-traces/
+          if-no-files-found: warn
